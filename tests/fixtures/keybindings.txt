@@ -1,0 +1,7 @@
+SUPER + RETURN                      → Terminal
+SUPER SHIFT + F                    → File manager
+SHIFT ALT + D                      → Download Video from Web App
+SUPER + SPACE                      → Omarchy menu
+SUPER + CTRL + V                   → Clipboard manager
+ALT + PRINT                        → Screenrecording
+invalid line without an arrow

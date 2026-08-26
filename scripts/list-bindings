@@ -1,0 +1,90 @@
+#!/usr/bin/env python3
+"""Convert Omarchy's printable keybinding list to JSON."""
+
+from __future__ import annotations
+
+import argparse
+import json
+import re
+import subprocess
+import sys
+from pathlib import Path
+
+MODIFIERS = ("SUPER", "SHIFT", "CTRL", "ALT")
+ROW_PATTERN = re.compile(r"^\s*(.*?)\s+→\s+(.+?)\s*$")
+
+
+def normalize_key(value: str) -> str:
+    aliases = {
+        "ENTER": "RETURN",
+        "ESC": "ESCAPE",
+        " ": "SPACE",
+    }
+    key = value.strip().upper()
+    return aliases.get(key, key)
+
+
+def parse_bindings(output: str) -> list[dict[str, object]]:
+    bindings: list[dict[str, object]] = []
+
+    for line in output.splitlines():
+        match = ROW_PATTERN.match(line)
+        if not match:
+            continue
+
+        shortcut, description = match.groups()
+        if "+" in shortcut:
+            modifier_text, key_text = shortcut.rsplit("+", 1)
+            modifier_tokens = modifier_text.replace("+", " ").upper().split()
+            modifiers = [modifier for modifier in MODIFIERS if modifier in modifier_tokens]
+            key = normalize_key(key_text)
+        else:
+            modifiers = []
+            key = normalize_key(shortcut)
+
+        if not key or key in MODIFIERS:
+            continue
+        bindings.append(
+            {
+                "shortcut": " + ".join([*modifiers, key]),
+                "modifiers": modifiers,
+                "key": key,
+                "description": description.strip(),
+            }
+        )
+
+    return bindings
+
+
+def read_source(input_path: Path | None) -> str:
+    if input_path:
+        return input_path.read_text(encoding="utf-8")
+
+    result = subprocess.run(
+        ["omarchy", "menu", "keybindings", "--print"],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0 and not result.stdout:
+        raise RuntimeError(result.stderr.strip() or "Unable to read keybindings")
+    return result.stdout
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--input", type=Path, help="Parse a saved command output")
+    args = parser.parse_args()
+
+    try:
+        source = read_source(args.input)
+        json.dump(parse_bindings(source), sys.stdout, ensure_ascii=False)
+        sys.stdout.write("\n")
+        return 0
+    except (OSError, RuntimeError) as error:
+        print(json.dumps({"error": str(error)}, ensure_ascii=False))
+        return 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

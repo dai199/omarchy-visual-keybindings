@@ -1,0 +1,16 @@
+{
+  "schemaVersion": 1,
+  "id": "daikigames.keyboard-shortcuts",
+  "name": "Keyboard Shortcuts",
+  "version": "0.1.0",
+  "author": "Daiki",
+  "license": "MIT",
+  "description": "Explore Omarchy keyboard shortcuts on an interactive keyboard.",
+  "kinds": [
+    "overlay"
+  ],
+  "keepLoaded": true,
+  "entryPoints": {
+    "overlay": "KeyboardShortcuts.qml"
+  }
+}
