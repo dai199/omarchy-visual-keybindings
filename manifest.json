@@ -1,11 +1,11 @@
 {
   "schemaVersion": 1,
-  "id": "daikigames.keyboard-shortcuts",
-  "name": "Keyboard Shortcuts",
+  "id": "dai199.visual-keybindings",
+  "name": "Visual Keybindings",
   "version": "0.1.0",
   "author": "Daiki",
   "license": "MIT",
-  "description": "Explore Omarchy keyboard shortcuts on an interactive keyboard.",
+  "description": "Explore and create Omarchy keybindings on an interactive keyboard.",
   "kinds": [
     "overlay"
   ],

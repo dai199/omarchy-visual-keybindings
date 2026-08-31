@@ -85,8 +85,8 @@ Item {
       next[modifierName] = modifierName === name ? value : heldModifiers[modifierName]
     }
     heldModifiers = next
-    selectedModifiers = []
-    selectedKey = ""
+    // Keep selectedKey. Releasing Super after Super+B would otherwise
+    // wipe the detail panel before the user can read it.
   }
 
   function modifierNameFromScanCode(scanCode) {
@@ -305,10 +305,15 @@ Item {
     visible: root.opened
     anchors { top: true; bottom: true; left: true; right: true }
     color: "transparent"
-    WlrLayershell.namespace: "keyboard-shortcuts"
+    WlrLayershell.namespace: "visual-keybindings"
     WlrLayershell.layer: WlrLayer.Overlay
     WlrLayershell.keyboardFocus: WlrKeyboardFocus.Exclusive
     exclusionMode: ExclusionMode.Ignore
+
+    ShortcutInhibitor {
+      window: panel
+      enabled: panel.visible
+    }
 
     Rectangle {
       anchors.fill: parent
@@ -384,7 +389,7 @@ Item {
           Column {
             width: parent.width - clearButton.width - refreshButton.width - parent.spacing * 2
             Text {
-              text: "Keyboard shortcuts"
+              text: "Visual Keybindings"
               color: root.foreground
               font.family: Style.font.menuFamily
               font.pixelSize: Style.font.heading

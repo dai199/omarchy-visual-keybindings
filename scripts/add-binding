@@ -65,7 +65,7 @@ def render_binding(shortcut_text: str, description: str, command: str) -> str:
     if not clean_command:
         raise AddBindingError("Command is required")
     return (
-        "\n-- Added by Keyboard Shortcuts\n"
+        "\n-- Added by Visual Keybindings\n"
         f"o.bind({lua_string(shortcut_text)}, {lua_string(clean_description)}, "
         f"{lua_string(clean_command)})\n"
     )

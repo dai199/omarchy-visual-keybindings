@@ -1,4 +1,4 @@
-# Omarchy Keyboard Shortcuts
+# Visual Keybindings
 
 An interactive keyboard for exploring shortcuts configured in Omarchy and
 Hyprland. Select or hold modifier keys to see which combinations are already
@@ -32,25 +32,42 @@ in use and which keys are still available.
 Clone or copy this repository into the Omarchy user plugin directory:
 
 ```bash
-git clone <repository-url> ~/.config/omarchy/plugins/daikigames.keyboard-shortcuts
-omarchy plugin validate ~/.config/omarchy/plugins/daikigames.keyboard-shortcuts
-omarchy plugin enable daikigames.keyboard-shortcuts
+git clone <repository-url> ~/.config/omarchy/plugins/dai199.visual-keybindings
+omarchy plugin validate ~/.config/omarchy/plugins/dai199.visual-keybindings
+omarchy plugin enable dai199.visual-keybindings
 ```
 
 Open the overlay with:
 
 ```bash
-omarchy-shell shell toggle daikigames.keyboard-shortcuts
+omarchy-shell shell toggle dai199.visual-keybindings
 ```
 
 You can bind that command in `~/.config/hypr/bindings.lua`:
 
 ```lua
 o.bind(
-  "SUPER + ALT + K",
-  "Visual keyboard shortcuts",
-  "omarchy-shell shell toggle daikigames.keyboard-shortcuts"
+  "SUPER + SHIFT + K",
+  "Visual Keybindings",
+  "omarchy-shell shell toggle dai199.visual-keybindings"
 )
+```
+
+On a stock Omarchy install, `SUPER + K` already opens the text keybinding
+list. `SUPER + ALT + K` and `SUPER + CTRL + K` open the Tmux and Herdr
+lists, so `SUPER + SHIFT + K` is the free neighbor of those shortcuts.
+
+Add a menu row in `~/.config/omarchy/extensions/omarchy-menu.jsonc` to
+open the overlay from Super+Space → Learn:
+
+```jsonc
+"learn.visual-keybindings": {
+  "icon": "󰌌",
+  "label": "Visual Keybindings",
+  "aliases": ["visual-keybindings", "visual-keyboard"],
+  "description": "Interactive keyboard of configured shortcuts",
+  "action": "omarchy-shell shell toggle dai199.visual-keybindings"
+}
 ```
 
 ## Development
