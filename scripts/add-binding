@@ -1,0 +1,173 @@
+#!/usr/bin/env python3
+"""Safely add a user keybinding to Omarchy's Hyprland configuration."""
+
+from __future__ import annotations
+
+import argparse
+import datetime as dt
+import json
+import os
+import shutil
+import subprocess
+import sys
+import tempfile
+from pathlib import Path
+
+MODIFIER_ORDER = ("SUPER", "SHIFT", "CTRL", "ALT")
+VALID_KEYS = {
+    "ESCAPE", "F1", "F2", "F3", "F4", "F5", "F6", "F7", "F8", "F9",
+    "F10", "F11", "F12", "GRAVE", "1", "2", "3", "4", "5", "6", "7",
+    "8", "9", "0", "MINUS", "EQUAL", "BACKSPACE", "TAB", "Q", "W", "E",
+    "R", "T", "Y", "U", "I", "O", "P", "BRACKETLEFT", "BRACKETRIGHT",
+    "BACKSLASH", "CAPSLOCK", "A", "S", "D", "F", "G", "H", "J", "K",
+    "L", "SEMICOLON", "APOSTROPHE", "RETURN", "Z", "X", "C", "V", "B",
+    "N", "M", "COMMA", "PERIOD", "SLASH", "SPACE",
+}
+
+
+class AddBindingError(RuntimeError):
+    pass
+
+
+def lua_string(value: str) -> str:
+    if "\x00" in value:
+        raise AddBindingError("Values may not contain NUL characters")
+    escaped = (
+        value.replace("\\", "\\\\")
+        .replace('"', '\\"')
+        .replace("\r", "\\r")
+        .replace("\n", "\\n")
+        .replace("\t", "\\t")
+    )
+    return f'"{escaped}"'
+
+
+def normalize_modifiers(values: list[str]) -> list[str]:
+    requested = {value.strip().upper() for value in values if value.strip()}
+    unknown = requested.difference(MODIFIER_ORDER)
+    if unknown:
+        raise AddBindingError(f"Unsupported modifier: {sorted(unknown)[0]}")
+    return [modifier for modifier in MODIFIER_ORDER if modifier in requested]
+
+
+def shortcut(modifiers: list[str], key: str) -> str:
+    normalized_key = key.strip().upper()
+    if normalized_key not in VALID_KEYS:
+        raise AddBindingError(f"Unsupported key: {key}")
+    return " + ".join([*normalize_modifiers(modifiers), normalized_key])
+
+
+def render_binding(shortcut_text: str, description: str, command: str) -> str:
+    clean_description = description.strip()
+    clean_command = command.strip()
+    if not clean_description:
+        raise AddBindingError("Description is required")
+    if not clean_command:
+        raise AddBindingError("Command is required")
+    return (
+        "\n-- Added by Keyboard Shortcuts\n"
+        f"o.bind({lua_string(shortcut_text)}, {lua_string(clean_description)}, "
+        f"{lua_string(clean_command)})\n"
+    )
+
+
+def configured_shortcuts(provider: Path) -> set[str]:
+    result = subprocess.run(
+        [str(provider)], check=False, capture_output=True, text=True
+    )
+    if result.returncode != 0:
+        raise AddBindingError(result.stderr.strip() or "Unable to inspect keybindings")
+    try:
+        rows = json.loads(result.stdout)
+    except json.JSONDecodeError as error:
+        raise AddBindingError("The keybinding provider returned invalid JSON") from error
+    return {str(row.get("shortcut", "")).upper() for row in rows}
+
+
+def write_atomically(path: Path, content: str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    descriptor, temporary_name = tempfile.mkstemp(prefix=f".{path.name}.", dir=path.parent)
+    temporary = Path(temporary_name)
+    try:
+        with os.fdopen(descriptor, "w", encoding="utf-8") as output:
+            output.write(content)
+            output.flush()
+            os.fsync(output.fileno())
+        temporary.chmod(path.stat().st_mode if path.exists() else 0o644)
+        temporary.replace(path)
+    finally:
+        temporary.unlink(missing_ok=True)
+
+
+def add_binding(
+    config: Path,
+    provider: Path,
+    shortcut_text: str,
+    description: str,
+    command: str,
+    reload_config: bool = True,
+) -> Path:
+    if shortcut_text.upper() in configured_shortcuts(provider):
+        raise AddBindingError(f"{shortcut_text} is already configured")
+
+    original = config.read_text(encoding="utf-8") if config.exists() else ""
+    timestamp = dt.datetime.now().strftime("%Y%m%d-%H%M%S")
+    backup = config.with_name(f"{config.name}.bak.{timestamp}")
+    if config.exists():
+        shutil.copy2(config, backup)
+    else:
+        backup.write_text("", encoding="utf-8")
+
+    write_atomically(config, original.rstrip() + "\n" + render_binding(shortcut_text, description, command))
+    if not reload_config:
+        return backup
+
+    reload_result = subprocess.run(["hyprctl", "reload"], check=False, capture_output=True, text=True)
+    errors_result = subprocess.run(
+        ["hyprctl", "configerrors"], check=False, capture_output=True, text=True
+    )
+    errors = errors_result.stdout.strip()
+    if reload_result.returncode != 0 or errors_result.returncode != 0 or errors:
+        write_atomically(config, original)
+        subprocess.run(["hyprctl", "reload"], check=False, capture_output=True, text=True)
+        detail = errors or reload_result.stderr.strip() or "Hyprland rejected the configuration"
+        raise AddBindingError(f"The change was rolled back: {detail}")
+    return backup
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--modifier", action="append", default=[])
+    parser.add_argument("--key", required=True)
+    parser.add_argument("--description", required=True)
+    parser.add_argument("--command", required=True)
+    parser.add_argument(
+        "--config",
+        type=Path,
+        default=Path.home() / ".config" / "hypr" / "bindings.lua",
+        help=argparse.SUPPRESS,
+    )
+    parser.add_argument("--provider", type=Path, help=argparse.SUPPRESS)
+    parser.add_argument("--no-reload", action="store_true", help=argparse.SUPPRESS)
+    args = parser.parse_args()
+
+    provider = args.provider or Path(__file__).with_name("list-bindings")
+    try:
+        shortcut_text = shortcut(args.modifier, args.key)
+        backup = add_binding(
+            args.config,
+            provider,
+            shortcut_text,
+            args.description,
+            args.command,
+            not args.no_reload,
+        )
+        print(json.dumps({"ok": True, "shortcut": shortcut_text, "backup": str(backup)}))
+        return 0
+    except (AddBindingError, OSError) as error:
+        print(json.dumps({"ok": False, "error": str(error)}, ensure_ascii=False))
+        return 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

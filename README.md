@@ -5,8 +5,9 @@ Hyprland. Select or hold modifier keys to see which combinations are already
 in use and which keys are still available.
 
 > [!NOTE]
-> This is an early, read-only preview. It does not modify your Hyprland
-> configuration.
+> This is an early preview. Shortcut creation always shows a preview and
+> validates Hyprland after saving, but you should still review commands before
+> running them.
 
 ## Features
 
@@ -15,6 +16,8 @@ in use and which keys are still available.
 - Physical modifier key tracking while the overlay is focused
 - Used and available key states
 - Shortcut descriptions on selection
+- Shortcut creation for available key combinations
+- Automatic backup, validation, and rollback when saving
 - Automatic refresh whenever the overlay opens
 - Theme integration with Omarchy Shell
 
@@ -68,7 +71,6 @@ reload automatically while developing.
 - Search and category filters
 - Distinguish Omarchy defaults from user overrides
 - Conflict detection
-- Safe shortcut creation with preview, backup, validation, and rollback
 
 ## License
 

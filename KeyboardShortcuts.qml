@@ -15,9 +15,15 @@ Item {
   property var bindings: []
   property string loadError: ""
   property string selectedKey: ""
+  property bool editorOpen: false
+  property string editorDescription: ""
+  property string editorCommand: ""
+  property string saveError: ""
+  property string saveNotice: ""
 
   property var pinnedModifiers: ({ "SUPER": false, "SHIFT": false, "CTRL": false, "ALT": false })
   property var heldModifiers: ({ "SUPER": false, "SHIFT": false, "CTRL": false, "ALT": false })
+  property var selectedModifiers: []
 
   property color background: Color.menu.background
   property color foreground: Color.menu.text
@@ -32,7 +38,7 @@ Item {
   readonly property int cardWidth: Math.min(panel.width - Style.gapsOut * 2, unit * 15.5 + Style.space(56))
   readonly property int cardHeight: Math.min(
     panel.height - Style.gapsOut * 2,
-    unit * 6 + keyGap * 5 + Style.space(150)
+    unit * 6 + keyGap * 5 + Style.space(190)
   )
 
   function pluginPath(name) {
@@ -56,6 +62,7 @@ Item {
   function clearModifiers() {
     pinnedModifiers = ({ "SUPER": false, "SHIFT": false, "CTRL": false, "ALT": false })
     heldModifiers = ({ "SUPER": false, "SHIFT": false, "CTRL": false, "ALT": false })
+    selectedModifiers = []
     selectedKey = ""
   }
 
@@ -66,6 +73,7 @@ Item {
       next[modifierName] = modifierName === name ? !pinnedModifiers[modifierName] : pinnedModifiers[modifierName]
     }
     pinnedModifiers = next
+    selectedModifiers = []
     selectedKey = ""
   }
 
@@ -77,22 +85,75 @@ Item {
       next[modifierName] = modifierName === name ? value : heldModifiers[modifierName]
     }
     heldModifiers = next
+    selectedModifiers = []
     selectedKey = ""
   }
 
+  function modifierNameFromScanCode(scanCode) {
+    // Qt Wayland often reports X11 keycodes (evdev + 8). Accept both.
+    var names = ({
+      29: "CTRL", 37: "CTRL", 97: "CTRL", 105: "CTRL",
+      42: "SHIFT", 50: "SHIFT", 54: "SHIFT", 62: "SHIFT",
+      56: "ALT", 64: "ALT", 100: "ALT", 108: "ALT",
+      125: "SUPER", 133: "SUPER", 126: "SUPER", 134: "SUPER"
+    })
+    return names[scanCode] || ""
+  }
+
+  function modifierNameFromKey(key) {
+    if (key === Qt.Key_Meta || key === Qt.Key_Super_L || key === Qt.Key_Super_R)
+      return "SUPER"
+    if (key === Qt.Key_Shift)
+      return "SHIFT"
+    if (key === Qt.Key_Control)
+      return "CTRL"
+    if (key === Qt.Key_Alt || key === Qt.Key_AltGr)
+      return "ALT"
+    return ""
+  }
+
+  function modifierNameFromEvent(event) {
+    return modifierNameFromScanCode(event.nativeScanCode) || modifierNameFromKey(event.key)
+  }
+
   function updatePhysicalModifier(event, pressed) {
-    if (event.key === Qt.Key_Meta || event.key === Qt.Key_Super_L || event.key === Qt.Key_Super_R)
-      setHeldModifier("SUPER", pressed)
-    else if (event.key === Qt.Key_Shift)
-      setHeldModifier("SHIFT", pressed)
-    else if (!pressed && heldModifiers.SHIFT === true && event.key === Qt.Key_CapsLock)
+    var name = modifierNameFromEvent(event)
+    if (name) {
+      setHeldModifier(name, pressed)
+      return
+    }
+    if (!pressed && heldModifiers.SHIFT === true && event.key === Qt.Key_CapsLock)
       // Some XKB keymaps report a Shift release as CapsLock. Only apply this
       // compatibility path while Shift is known to be held.
       setHeldModifier("SHIFT", false)
-    else if (event.key === Qt.Key_Control)
-      setHeldModifier("CTRL", pressed)
-    else if (event.key === Qt.Key_Alt)
-      setHeldModifier("ALT", pressed)
+  }
+
+  function keyIdFromEvent(event) {
+    if (event.key >= Qt.Key_A && event.key <= Qt.Key_Z)
+      return String.fromCharCode(event.key)
+    if (event.key >= Qt.Key_0 && event.key <= Qt.Key_9)
+      return String.fromCharCode(event.key)
+
+    var specialKeys = ({})
+    specialKeys[Qt.Key_Space] = "SPACE"
+    specialKeys[Qt.Key_Return] = "RETURN"
+    specialKeys[Qt.Key_Enter] = "RETURN"
+    specialKeys[Qt.Key_Tab] = "TAB"
+    specialKeys[Qt.Key_Backspace] = "BACKSPACE"
+    specialKeys[Qt.Key_QuoteLeft] = "GRAVE"
+    specialKeys[Qt.Key_Minus] = "MINUS"
+    specialKeys[Qt.Key_Equal] = "EQUAL"
+    specialKeys[Qt.Key_BracketLeft] = "BRACKETLEFT"
+    specialKeys[Qt.Key_BracketRight] = "BRACKETRIGHT"
+    specialKeys[Qt.Key_Backslash] = "BACKSLASH"
+    specialKeys[Qt.Key_Semicolon] = "SEMICOLON"
+    specialKeys[Qt.Key_Apostrophe] = "APOSTROPHE"
+    specialKeys[Qt.Key_Comma] = "COMMA"
+    specialKeys[Qt.Key_Period] = "PERIOD"
+    specialKeys[Qt.Key_Slash] = "SLASH"
+    if (event.key >= Qt.Key_F1 && event.key <= Qt.Key_F12)
+      return "F" + String(event.key - Qt.Key_F1 + 1)
+    return specialKeys[event.key] || ""
   }
 
   function matchesFor(keyId) {
@@ -100,7 +161,58 @@ Item {
   }
 
   function selectedBindings() {
-    return selectedKey ? matchesFor(selectedKey) : []
+    return selectedKey ? KeyboardModel.bindingsFor(bindings, selectedKey, selectedModifiers) : []
+  }
+
+  function selectedShortcut() {
+    return selectedModifiers.concat([selectedKey]).join(" + ")
+  }
+
+  function beginEditor() {
+    if (!selectedKey || selectedBindings().length) return
+    editorDescription = ""
+    editorCommand = ""
+    saveError = ""
+    editorOpen = true
+    Qt.callLater(function() { descriptionInput.forceActiveFocus() })
+  }
+
+  function activateKey(keyData) {
+    if (keyData.modifier === true) {
+      toggleModifier(keyData.id)
+      keyCatcher.forceActiveFocus()
+      return
+    }
+
+    // Snapshot the chord for the editor and detail panel. Do not pin
+    // physical holds into click-locks, or those keys stay highlighted
+    // after the editor closes and the real keys have been released.
+    selectedModifiers = activeModifiers()
+    selectedKey = keyData.id
+    if (selectedBindings().length === 0) beginEditor()
+    else keyCatcher.forceActiveFocus()
+  }
+
+  function closeEditor() {
+    editorOpen = false
+    saveError = ""
+    selectedModifiers = []
+    selectedKey = ""
+    heldModifiers = ({ "SUPER": false, "SHIFT": false, "CTRL": false, "ALT": false })
+    Qt.callLater(function() { keyCatcher.forceActiveFocus() })
+  }
+
+  function saveBinding() {
+    if (!editorDescription.trim() || !editorCommand.trim() || saveProcess.running) return
+    var args = [pluginPath("scripts/add-binding")]
+    var modifiers = selectedModifiers
+    for (var i = 0; i < modifiers.length; i++) args.push("--modifier", modifiers[i])
+    args.push("--key", selectedKey)
+    args.push("--description", editorDescription.trim())
+    args.push("--command", editorCommand.trim())
+    saveError = ""
+    saveProcess.command = args
+    saveProcess.running = true
   }
 
   function parseBindings(raw) {
@@ -128,6 +240,8 @@ Item {
 
   function open(payloadJson) {
     clearModifiers()
+    editorOpen = false
+    saveNotice = ""
     opened = true
     reload()
     Qt.callLater(function() { keyCatcher.forceActiveFocus() })
@@ -162,6 +276,27 @@ Item {
     onExited: function(exitCode) {
       if (exitCode === 0) root.parseBindings(bindingOutput.text)
       else root.loadError = String(bindingError.text || "Unable to load configured shortcuts.").trim()
+    }
+  }
+
+  Process {
+    id: saveProcess
+    stdout: StdioCollector { id: saveOutput; waitForEnd: true }
+    stderr: StdioCollector { id: saveErrorOutput; waitForEnd: true }
+    onExited: function(exitCode) {
+      var result = ({})
+      try { result = JSON.parse(String(saveOutput.text || "{}")) } catch (error) {}
+      if (exitCode === 0 && result.ok) {
+        root.editorOpen = false
+        root.selectedModifiers = []
+        root.selectedKey = ""
+        root.heldModifiers = ({ "SUPER": false, "SHIFT": false, "CTRL": false, "ALT": false })
+        root.saveNotice = "Saved " + result.shortcut
+        root.reload()
+        Qt.callLater(function() { keyCatcher.forceActiveFocus() })
+      } else {
+        root.saveError = result.error || String(saveErrorOutput.text || "Unable to save the shortcut.").trim()
+      }
     }
   }
 
@@ -210,7 +345,8 @@ Item {
       Item {
         id: keyCatcher
         anchors.fill: parent
-        focus: true
+        focus: !root.editorOpen
+        enabled: !root.editorOpen
         onActiveFocusChanged: if (!activeFocus)
           root.heldModifiers = ({ "SUPER": false, "SHIFT": false, "CTRL": false, "ALT": false })
 
@@ -221,7 +357,9 @@ Item {
             event.accepted = true
             return
           }
-          root.updatePhysicalModifier(event, true)
+          var keyId = root.keyIdFromEvent(event)
+          if (!keyId) root.updatePhysicalModifier(event, true)
+          if (keyId && !event.isAutoRepeat) root.activateKey({ id: keyId, modifier: false })
           event.accepted = true
         }
         Keys.onReleased: function(event) {
@@ -340,6 +478,7 @@ Item {
                 Repeater {
                   model: parent.modelData
                   delegate: Rectangle {
+                    id: keyCap
                     required property var modelData
                     readonly property var keyBindings: modelData.gap ? [] : root.matchesFor(modelData.id)
                     readonly property bool used: keyBindings.length > 0
@@ -359,23 +498,17 @@ Item {
                       text: parent.modelData.label
                       color: parent.activeModifier || parent.selected || parent.used ? root.selectedText : root.foreground
                       font.family: Style.font.menuFamily
-                      font.pixelSize: parent.modelData.label.length > 5 ? Style.font.small : Style.font.body
+                      font.pixelSize: Style.font.body
                     }
 
-                    MouseArea {
-                      anchors.fill: parent
-                      acceptedButtons: Qt.AllButtons
-                      preventStealing: true
-                      enabled: !parent.modelData.gap
-                      hoverEnabled: true
+                    TapHandler {
+                      enabled: !keyCap.modelData.gap
+                      acceptedButtons: Qt.LeftButton
+                      onTapped: root.activateKey(keyCap.modelData)
+                    }
+                    HoverHandler {
+                      enabled: !keyCap.modelData.gap
                       cursorShape: Qt.PointingHandCursor
-                      onPressed: function(mouse) { mouse.accepted = true }
-                      onClicked: function(mouse) {
-                        mouse.accepted = true
-                        if (parent.modelData.modifier) root.toggleModifier(parent.modelData.id)
-                        else root.selectedKey = parent.modelData.id
-                        keyCatcher.forceActiveFocus()
-                      }
                     }
                   }
                 }
@@ -386,7 +519,7 @@ Item {
 
         Rectangle {
           width: parent.width
-          height: Style.space(72)
+          height: Style.space(110)
           radius: root.cornerRadius
           color: "transparent"
           border.color: root.border
@@ -405,9 +538,9 @@ Item {
               font.bold: true
               text: {
                 if (root.loadError) return root.loadError
+                if (root.saveNotice) return root.saveNotice
                 if (!root.selectedKey) return root.activeModifiers().length ? root.activeModifiers().join(" + ") : "No modifiers"
-                var prefix = root.activeModifiers()
-                return prefix.concat([root.selectedKey]).join(" + ")
+                return root.selectedShortcut()
               }
             }
 
@@ -420,6 +553,7 @@ Item {
               wrapMode: Text.Wrap
               text: {
                 if (root.loadError) return "Check that Omarchy Shell and Hyprland are running, then refresh."
+                if (root.saveNotice) return "The shortcut is active and the keyboard has been refreshed."
                 if (!root.selectedKey) return "Select a key to inspect its shortcut. Highlighted keys are already in use."
                 var matches = root.selectedBindings()
                 if (!matches.length) return "Available — no configured shortcut uses this combination."
@@ -427,6 +561,160 @@ Item {
                 for (var i = 0; i < matches.length; i++) descriptions.push(matches[i].description)
                 return descriptions.join("  •  ")
               }
+            }
+
+            Rectangle {
+              visible: root.selectedKey !== "" && root.selectedBindings().length === 0
+              width: Style.space(128)
+              height: Style.space(30)
+              radius: root.cornerRadius
+              color: createMouse.containsMouse ? root.selectedBackground : "transparent"
+              border.color: root.selectedBackground
+              border.width: 1
+              Text {
+                anchors.centerIn: parent
+                text: "Create shortcut"
+                color: createMouse.containsMouse ? root.selectedText : root.foreground
+                font.family: Style.font.menuFamily
+                font.pixelSize: Style.font.body
+              }
+              MouseArea {
+                id: createMouse
+                anchors.fill: parent
+                hoverEnabled: true
+                cursorShape: Qt.PointingHandCursor
+                onClicked: root.beginEditor()
+              }
+            }
+          }
+        }
+      }
+
+      Rectangle {
+        id: editor
+        anchors.fill: parent
+        anchors.margins: Style.spacing.panelPadding
+        z: 20
+        visible: root.editorOpen
+        radius: root.cornerRadius
+        color: root.background
+        border.color: root.border
+        border.width: 1
+
+        MouseArea { anchors.fill: parent; onPressed: function(mouse) { mouse.accepted = true } }
+
+        Column {
+          anchors.fill: parent
+          anchors.margins: Style.spacing.panelPadding
+          spacing: Style.spacing.md
+
+          Text {
+            text: "Create " + root.selectedShortcut()
+            color: root.foreground
+            font.family: Style.font.menuFamily
+            font.pixelSize: Style.font.heading
+            font.bold: true
+          }
+          Text {
+            text: "Description"
+            color: root.foreground
+            font.family: Style.font.menuFamily
+            font.pixelSize: Style.font.body
+          }
+          Rectangle {
+            width: parent.width
+            height: Style.space(42)
+            radius: root.cornerRadius
+            color: "transparent"
+            border.color: descriptionInput.activeFocus ? root.selectedBackground : root.border
+            border.width: 1
+            TextInput {
+              id: descriptionInput
+              anchors.fill: parent
+              anchors.margins: Style.spacing.sm
+              color: root.foreground
+              font.family: Style.font.menuFamily
+              font.pixelSize: Style.font.body
+              text: root.editorDescription
+              onTextChanged: root.editorDescription = text
+              KeyNavigation.tab: commandInput
+            }
+          }
+          Text {
+            text: "Command"
+            color: root.foreground
+            font.family: Style.font.menuFamily
+            font.pixelSize: Style.font.body
+          }
+          Rectangle {
+            width: parent.width
+            height: Style.space(42)
+            radius: root.cornerRadius
+            color: "transparent"
+            border.color: commandInput.activeFocus ? root.selectedBackground : root.border
+            border.width: 1
+            TextInput {
+              id: commandInput
+              anchors.fill: parent
+              anchors.margins: Style.spacing.sm
+              color: root.foreground
+              font.family: Style.font.menuFamily
+              font.pixelSize: Style.font.body
+              text: root.editorCommand
+              onTextChanged: root.editorCommand = text
+              KeyNavigation.tab: descriptionInput
+            }
+          }
+          Text {
+            text: "Preview"
+            color: root.foreground
+            font.family: Style.font.menuFamily
+            font.pixelSize: Style.font.body
+          }
+          Rectangle {
+            width: parent.width
+            height: Style.space(64)
+            radius: root.cornerRadius
+            color: "transparent"
+            border.color: root.border
+            border.width: 1
+            Text {
+              anchors.fill: parent
+              anchors.margins: Style.spacing.sm
+              color: root.foreground
+              opacity: 0.75
+              font.family: Style.font.menuFamily
+              font.pixelSize: Style.font.body
+              wrapMode: Text.WrapAnywhere
+              text: "o.bind(\"" + root.selectedShortcut() + "\", \"" + root.editorDescription + "\", \"" + root.editorCommand + "\")"
+            }
+          }
+          Text {
+            width: parent.width
+            visible: root.saveError !== ""
+            text: root.saveError
+            color: "#e06c75"
+            wrapMode: Text.Wrap
+            font.family: Style.font.menuFamily
+            font.pixelSize: Style.font.body
+          }
+          Item { width: 1; height: Style.spacing.sm }
+          Row {
+            spacing: Style.spacing.md
+            Rectangle {
+              width: Style.space(90); height: Style.space(36); radius: root.cornerRadius
+              color: cancelMouse.containsMouse ? root.selectedBackground : "transparent"
+              border.color: root.border; border.width: 1
+              Text { anchors.centerIn: parent; text: "Cancel"; color: cancelMouse.containsMouse ? root.selectedText : root.foreground; font.family: Style.font.menuFamily }
+              MouseArea { id: cancelMouse; anchors.fill: parent; hoverEnabled: root.editorOpen; cursorShape: Qt.PointingHandCursor; onClicked: root.closeEditor() }
+            }
+            Rectangle {
+              width: Style.space(110); height: Style.space(36); radius: root.cornerRadius
+              opacity: root.editorDescription.trim() && root.editorCommand.trim() ? 1 : 0.45
+              color: saveMouse.containsMouse ? root.selectedBackground : "transparent"
+              border.color: root.selectedBackground; border.width: 1
+              Text { anchors.centerIn: parent; text: saveProcess.running ? "Saving…" : "Save"; color: saveMouse.containsMouse ? root.selectedText : root.foreground; font.family: Style.font.menuFamily }
+              MouseArea { id: saveMouse; anchors.fill: parent; enabled: root.editorOpen && root.editorDescription.trim() !== "" && root.editorCommand.trim() !== "" && !saveProcess.running; hoverEnabled: root.editorOpen; cursorShape: Qt.PointingHandCursor; onClicked: root.saveBinding() }
             }
           }
         }
