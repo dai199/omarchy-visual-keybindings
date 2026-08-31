@@ -29,10 +29,16 @@ in use and which keys are still available.
 
 ## Install for development
 
-Clone or copy this repository into the Omarchy user plugin directory:
+Install from GitHub:
 
 ```bash
-git clone <repository-url> ~/.config/omarchy/plugins/dai199.visual-keybindings
+omarchy plugin add https://github.com/dai199/omarchy-visual-keybindings.git --enable
+```
+
+Or clone into the Omarchy user plugin directory while developing:
+
+```bash
+git clone https://github.com/dai199/omarchy-visual-keybindings.git ~/.config/omarchy/plugins/dai199.visual-keybindings
 omarchy plugin validate ~/.config/omarchy/plugins/dai199.visual-keybindings
 omarchy plugin enable dai199.visual-keybindings
 ```

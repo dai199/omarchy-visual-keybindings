@@ -1,6 +1,7 @@
 import importlib.machinery
 import importlib.util
 import json
+import os
 import tempfile
 import unittest
 from pathlib import Path
@@ -75,6 +76,43 @@ class AddBindingTest(unittest.TestCase):
                     "notes-app",
                     reload_config=False,
                 )
+
+    def test_rolls_back_when_hyprland_rejects_the_config(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            config = root / "bindings.lua"
+            original = "-- Existing bindings\n"
+            config.write_text(original, encoding="utf-8")
+            provider = root / "provider"
+            provider.write_text("#!/bin/sh\nprintf '[]\\n'\n", encoding="utf-8")
+            provider.chmod(0o755)
+
+            hyprctl = root / "hyprctl"
+            hyprctl.write_text(
+                "#!/bin/sh\n"
+                "if [ \"$1\" = reload ]; then exit 0; fi\n"
+                "if [ \"$1\" = configerrors ]; then echo 'bind error: test'; exit 0; fi\n"
+                "exit 1\n",
+                encoding="utf-8",
+            )
+            hyprctl.chmod(0o755)
+
+            previous_path = os.environ["PATH"]
+            os.environ["PATH"] = str(root) + os.pathsep + previous_path
+            try:
+                with self.assertRaisesRegex(MODULE.AddBindingError, "rolled back"):
+                    MODULE.add_binding(
+                        config,
+                        provider,
+                        "SUPER + K",
+                        "Open notes",
+                        "notes-app",
+                        reload_config=True,
+                    )
+            finally:
+                os.environ["PATH"] = previous_path
+
+            self.assertEqual(config.read_text(encoding="utf-8"), original)
 
 
 if __name__ == "__main__":

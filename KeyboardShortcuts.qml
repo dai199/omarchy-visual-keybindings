@@ -608,6 +608,12 @@ Item {
 
         MouseArea { anchors.fill: parent; onPressed: function(mouse) { mouse.accepted = true } }
 
+        Shortcut {
+          sequence: "Escape"
+          enabled: root.editorOpen
+          onActivated: root.closeEditor()
+        }
+
         Column {
           anchors.fill: parent
           anchors.margins: Style.spacing.panelPadding
@@ -643,6 +649,10 @@ Item {
               text: root.editorDescription
               onTextChanged: root.editorDescription = text
               KeyNavigation.tab: commandInput
+              Keys.onEscapePressed: function(event) {
+                root.closeEditor()
+                event.accepted = true
+              }
             }
           }
           Text {
@@ -668,6 +678,10 @@ Item {
               text: root.editorCommand
               onTextChanged: root.editorCommand = text
               KeyNavigation.tab: descriptionInput
+              Keys.onEscapePressed: function(event) {
+                root.closeEditor()
+                event.accepted = true
+              }
             }
           }
           Text {
