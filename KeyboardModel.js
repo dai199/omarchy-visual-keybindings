@@ -187,6 +187,39 @@ function originLabel(origin) {
   return ""
 }
 
+function normalizePresets(value) {
+  var source = []
+  if (Array.isArray(value)) source = value
+  else if (value && Array.isArray(value.presets)) source = value.presets
+  var seen = {}
+  var out = []
+  for (var i = 0; i < source.length; i++) {
+    var row = source[i] || {}
+    var id = String(row.id || "").trim()
+    var label = String(row.label || row.description || "").trim()
+    var description = String(row.description || row.label || "").trim()
+    var command = String(row.command || "").trim()
+    if (!id || !label || !description || !command || seen[id]) continue
+    seen[id] = true
+    out.push({ id: id, label: label, description: description, command: command })
+  }
+  return out
+}
+
+function pickPresets(shipped, user) {
+  if (user && Array.isArray(user.presets)) return normalizePresets(user.presets)
+  return normalizePresets(shipped)
+}
+
+function matchingPreset(presets, command) {
+  var cmd = String(command || "").trim()
+  if (!cmd || !presets) return null
+  for (var i = 0; i < presets.length; i++) {
+    if (presets[i].command === cmd) return presets[i]
+  }
+  return null
+}
+
 function hasUserOrigin(matches) {
   for (var i = 0; i < matches.length; i++) {
     if (matches[i].origin === "user" || matches[i].origin === "plugin") return true

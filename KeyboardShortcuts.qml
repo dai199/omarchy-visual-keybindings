@@ -21,6 +21,11 @@ Item {
   property string editorCommand: ""
   property string saveError: ""
   property string saveNotice: ""
+  property var presets: []
+  readonly property string selectedPresetId: {
+    var match = KeyboardModel.matchingPreset(presets, editorCommand)
+    return match ? match.id : ""
+  }
 
   property var pinnedModifiers: KeyboardModel.emptyModifiers()
   property var heldModifiers: KeyboardModel.emptyModifiers()
@@ -128,6 +133,25 @@ Item {
     saveError = ""
     editorOpen = true
     Qt.callLater(function() { descriptionInput.forceActiveFocus() })
+  }
+
+  function applyPreset(preset) {
+    if (!preset) return
+    editorDescription = preset.description
+    editorCommand = preset.command
+    descriptionInput.text = preset.description
+    commandInput.text = preset.command
+  }
+
+  function parseJson(raw) {
+    try { return JSON.parse(String(raw || "null")) } catch (error) { return null }
+  }
+
+  function reloadPresets() {
+    presets = KeyboardModel.pickPresets(
+      parseJson(shippedPresetsFile.text()),
+      parseJson(userPresetsFile.text())
+    )
   }
 
   function activateKey(keyData) {
@@ -244,6 +268,24 @@ Item {
   function toggle() {
     if (opened) dismiss()
     else open("{}")
+  }
+
+  FileView {
+    id: shippedPresetsFile
+    path: manifest && manifest.__sourceDir ? root.pluginPath("presets.json") : ""
+    watchChanges: true
+    printErrors: false
+    onLoaded: root.reloadPresets()
+    onLoadFailed: root.reloadPresets()
+  }
+
+  FileView {
+    id: userPresetsFile
+    path: Quickshell.env("HOME") + "/.config/omarchy/extensions/dai199.visual-keybindings.json"
+    watchChanges: true
+    printErrors: false
+    onLoaded: root.reloadPresets()
+    onLoadFailed: root.reloadPresets()
   }
 
   Process {
@@ -632,10 +674,20 @@ Item {
           onActivated: root.closeEditor()
         }
 
-        Column {
+        Flickable {
+          id: editorFlick
           anchors.fill: parent
           anchors.margins: Style.spacing.panelPadding
-          spacing: Style.spacing.md
+          clip: true
+          contentWidth: width
+          contentHeight: editorColumn.implicitHeight
+          boundsBehavior: Flickable.StopAtBounds
+          interactive: contentHeight > height
+
+          Column {
+            id: editorColumn
+            width: editorFlick.width
+            spacing: Style.spacing.md
 
           Text {
             text: (root.editorMode === "edit" ? "Edit " : "Create ") + root.selectedShortcut()
@@ -643,6 +695,51 @@ Item {
             font.family: Style.font.menuFamily
             font.pixelSize: Style.font.heading
             font.bold: true
+          }
+          Text {
+            text: "Common actions"
+            color: root.foreground
+            font.family: Style.font.menuFamily
+            font.pixelSize: Style.font.body
+          }
+          Flow {
+            width: parent.width
+            spacing: Style.spacing.sm
+            Repeater {
+              model: root.presets
+              Rectangle {
+                width: chipLabel.implicitWidth + Style.space(20)
+                height: Style.space(28)
+                radius: root.cornerRadius
+                color: (root.selectedPresetId === modelData.id || chipMouse.containsMouse) ? root.selectedBackground : "transparent"
+                border.color: root.selectedPresetId === modelData.id ? root.selectedBackground : root.border
+                border.width: 1
+                Text {
+                  id: chipLabel
+                  anchors.centerIn: parent
+                  text: modelData.label
+                  color: (root.selectedPresetId === modelData.id || chipMouse.containsMouse) ? root.selectedText : root.foreground
+                  font.family: Style.font.menuFamily
+                  font.pixelSize: Style.font.body
+                }
+                MouseArea {
+                  id: chipMouse
+                  anchors.fill: parent
+                  hoverEnabled: true
+                  cursorShape: Qt.PointingHandCursor
+                  onClicked: root.applyPreset(modelData)
+                }
+              }
+            }
+          }
+          Text {
+            width: parent.width
+            color: root.foreground
+            opacity: 0.58
+            font.family: Style.font.menuFamily
+            font.pixelSize: Style.font.body
+            wrapMode: Text.Wrap
+            text: "Click a chip to fill the form, or type a custom command below."
           }
           Text {
             text: "Description"
@@ -753,6 +850,7 @@ Item {
               Text { anchors.centerIn: parent; text: saveProcess.running ? "Saving…" : "Save"; color: saveMouse.containsMouse ? root.selectedText : root.foreground; font.family: Style.font.menuFamily }
               MouseArea { id: saveMouse; anchors.fill: parent; enabled: root.editorOpen && root.editorDescription.trim() !== "" && root.editorCommand.trim() !== "" && !saveProcess.running; hoverEnabled: root.editorOpen; cursorShape: Qt.PointingHandCursor; onClicked: root.saveBinding() }
             }
+          }
           }
         }
       }
