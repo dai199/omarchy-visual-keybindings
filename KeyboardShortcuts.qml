@@ -128,11 +128,42 @@ Item {
       setHeldModifier("SHIFT", false)
   }
 
-  function keyIdFromEvent(event) {
-    if (event.key >= Qt.Key_A && event.key <= Qt.Key_Z)
-      return String.fromCharCode(event.key)
-    if (event.key >= Qt.Key_0 && event.key <= Qt.Key_9)
-      return String.fromCharCode(event.key)
+  function keyIdFromScanCode(scanCode) {
+    // Digit-row identity must follow the physical key, not the shifted
+    // symbol. Hyprland stores SUPER+SHIFT+3 as key 3, but XKB reports
+    // Shift+3 as numbersign. Qt Wayland scan codes on this stack are
+    // X11 keycodes (evdev + 8); also accept evdev KEY_1..KEY_8.
+    var ids = ({
+      2: "1", 3: "2", 4: "3", 5: "4", 6: "5", 7: "6", 8: "7", 9: "8",
+      10: "1", 11: "2", 12: "3", 13: "4", 14: "5",
+      15: "6", 16: "7", 17: "8", 18: "9", 19: "0",
+      20: "MINUS", 21: "EQUAL", 22: "BACKSPACE", 23: "TAB",
+      34: "BRACKETLEFT", 35: "BRACKETRIGHT", 36: "RETURN",
+      47: "SEMICOLON", 48: "APOSTROPHE", 49: "GRAVE",
+      51: "BACKSLASH", 59: "COMMA", 60: "PERIOD", 61: "SLASH",
+      65: "SPACE"
+    })
+    return ids[scanCode] || ""
+  }
+
+  function keyIdFromKey(key) {
+    if (key >= Qt.Key_A && key <= Qt.Key_Z)
+      return String.fromCharCode(key)
+    if (key >= Qt.Key_0 && key <= Qt.Key_9)
+      return String.fromCharCode(key)
+
+    var shiftedDigits = ({})
+    shiftedDigits[Qt.Key_Exclam] = "1"
+    shiftedDigits[Qt.Key_At] = "2"
+    shiftedDigits[Qt.Key_NumberSign] = "3"
+    shiftedDigits[Qt.Key_Dollar] = "4"
+    shiftedDigits[Qt.Key_Percent] = "5"
+    shiftedDigits[Qt.Key_AsciiCircum] = "6"
+    shiftedDigits[Qt.Key_Ampersand] = "7"
+    shiftedDigits[Qt.Key_Asterisk] = "8"
+    shiftedDigits[Qt.Key_ParenLeft] = "9"
+    shiftedDigits[Qt.Key_ParenRight] = "0"
+    if (shiftedDigits[key]) return shiftedDigits[key]
 
     var specialKeys = ({})
     specialKeys[Qt.Key_Space] = "SPACE"
@@ -141,19 +172,44 @@ Item {
     specialKeys[Qt.Key_Tab] = "TAB"
     specialKeys[Qt.Key_Backspace] = "BACKSPACE"
     specialKeys[Qt.Key_QuoteLeft] = "GRAVE"
+    specialKeys[Qt.Key_AsciiTilde] = "GRAVE"
     specialKeys[Qt.Key_Minus] = "MINUS"
+    specialKeys[Qt.Key_Underscore] = "MINUS"
     specialKeys[Qt.Key_Equal] = "EQUAL"
+    specialKeys[Qt.Key_Plus] = "EQUAL"
     specialKeys[Qt.Key_BracketLeft] = "BRACKETLEFT"
+    specialKeys[Qt.Key_BraceLeft] = "BRACKETLEFT"
     specialKeys[Qt.Key_BracketRight] = "BRACKETRIGHT"
+    specialKeys[Qt.Key_BraceRight] = "BRACKETRIGHT"
     specialKeys[Qt.Key_Backslash] = "BACKSLASH"
+    specialKeys[Qt.Key_Bar] = "BACKSLASH"
     specialKeys[Qt.Key_Semicolon] = "SEMICOLON"
+    specialKeys[Qt.Key_Colon] = "SEMICOLON"
     specialKeys[Qt.Key_Apostrophe] = "APOSTROPHE"
     specialKeys[Qt.Key_Comma] = "COMMA"
+    specialKeys[Qt.Key_Less] = "COMMA"
     specialKeys[Qt.Key_Period] = "PERIOD"
+    specialKeys[Qt.Key_Greater] = "PERIOD"
     specialKeys[Qt.Key_Slash] = "SLASH"
-    if (event.key >= Qt.Key_F1 && event.key <= Qt.Key_F12)
-      return "F" + String(event.key - Qt.Key_F1 + 1)
-    return specialKeys[event.key] || ""
+    specialKeys[Qt.Key_Question] = "SLASH"
+    if (key >= Qt.Key_F1 && key <= Qt.Key_F12)
+      return "F" + String(key - Qt.Key_F1 + 1)
+    return specialKeys[key] || ""
+  }
+
+  function keyIdFromText(text) {
+    if (!text) return ""
+    if (text >= "0" && text <= "9") return text
+    var shifted = ({
+      "!": "1", "@": "2", "#": "3", "$": "4", "%": "5",
+      "^": "6", "&": "7", "*": "8", "(": "9", ")": "0",
+      "\"": "2"
+    })
+    return shifted[text] || ""
+  }
+
+  function keyIdFromEvent(event) {
+    return keyIdFromScanCode(event.nativeScanCode) || keyIdFromKey(event.key) || keyIdFromText(event.text)
   }
 
   function matchesFor(keyId) {
@@ -238,21 +294,30 @@ Item {
     bindingProcess.running = true
   }
 
+  function setCompositorSubmap(name) {
+    submapProcess.running = false
+    submapProcess.command = [pluginPath("scripts/set-submap"), name]
+    submapProcess.running = true
+  }
+
   function open(payloadJson) {
     clearModifiers()
     editorOpen = false
     saveNotice = ""
     opened = true
+    setCompositorSubmap("visual-keybindings")
     reload()
     Qt.callLater(function() { keyCatcher.forceActiveFocus() })
   }
 
   function close() {
+    setCompositorSubmap("reset")
     clearModifiers()
     opened = false
   }
 
   function dismiss() {
+    setCompositorSubmap("reset")
     clearModifiers()
     opened = false
     if (shell && typeof shell.hide === "function") shell.hide(manifest.id)
@@ -261,6 +326,10 @@ Item {
   function toggle() {
     if (opened) dismiss()
     else open("{}")
+  }
+
+  Process {
+    id: submapProcess
   }
 
   Process {
@@ -309,6 +378,7 @@ Item {
     WlrLayershell.layer: WlrLayer.Overlay
     WlrLayershell.keyboardFocus: WlrKeyboardFocus.Exclusive
     exclusionMode: ExclusionMode.Ignore
+    onVisibleChanged: root.setCompositorSubmap(visible ? "visual-keybindings" : "reset")
 
     ShortcutInhibitor {
       window: panel

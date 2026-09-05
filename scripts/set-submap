@@ -1,0 +1,4 @@
+#!/bin/bash
+set -euo pipefail
+name="${1:-reset}"
+hyprctl eval "hl.dispatch(hl.dsp.submap(\"${name}\"))"
