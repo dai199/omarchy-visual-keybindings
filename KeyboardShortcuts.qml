@@ -62,6 +62,12 @@ Item {
     selectedKey = ""
   }
 
+  function resetView() {
+    clearModifiers()
+    saveNotice = ""
+    reload()
+  }
+
   function toggleModifier(name) {
     pinnedModifiers = KeyboardModel.copyModifiers(pinnedModifiers, name, !pinnedModifiers[name])
     selectedModifiers = []
@@ -372,7 +378,7 @@ Item {
           spacing: Style.spacing.sm
 
           Column {
-            width: parent.width - clearButton.width - refreshButton.width - parent.spacing * 2
+            width: parent.width - clearButton.width - parent.spacing
             Text {
               text: "Visual Keybindings"
               color: root.foreground
@@ -391,7 +397,7 @@ Item {
 
           Rectangle {
             id: clearButton
-            width: Style.space(64)
+            width: Style.space(78)
             height: Style.space(32)
             radius: root.cornerRadius
             color: clearMouse.containsMouse ? root.selectedBackground : "transparent"
@@ -399,7 +405,7 @@ Item {
             border.width: 1
             Text {
               anchors.centerIn: parent
-              text: "Clear"
+              text: bindingProcess.running ? "Loading…" : "Clear"
               color: clearMouse.containsMouse ? root.selectedText : root.foreground
               font.family: Style.font.menuFamily
               font.pixelSize: Style.font.body
@@ -409,44 +415,14 @@ Item {
               anchors.fill: parent
               acceptedButtons: Qt.AllButtons
               preventStealing: true
-              hoverEnabled: true
-              cursorShape: Qt.PointingHandCursor
-              onPressed: function(mouse) { mouse.accepted = true }
-              onClicked: function(mouse) {
-                mouse.accepted = true
-                root.clearModifiers()
-                keyCatcher.forceActiveFocus()
-              }
-            }
-          }
-
-          Rectangle {
-            id: refreshButton
-            width: Style.space(78)
-            height: Style.space(32)
-            radius: root.cornerRadius
-            color: refreshMouse.containsMouse ? root.selectedBackground : "transparent"
-            border.color: root.border
-            border.width: 1
-            Text {
-              anchors.centerIn: parent
-              text: bindingProcess.running ? "Loading…" : "Refresh"
-              color: refreshMouse.containsMouse ? root.selectedText : root.foreground
-              font.family: Style.font.menuFamily
-              font.pixelSize: Style.font.body
-            }
-            MouseArea {
-              id: refreshMouse
-              anchors.fill: parent
-              acceptedButtons: Qt.AllButtons
-              preventStealing: true
               enabled: !bindingProcess.running
               hoverEnabled: true
               cursorShape: Qt.PointingHandCursor
               onPressed: function(mouse) { mouse.accepted = true }
               onClicked: function(mouse) {
                 mouse.accepted = true
-                root.reload()
+                root.resetView()
+                keyCatcher.forceActiveFocus()
               }
             }
           }
