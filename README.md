@@ -63,11 +63,6 @@ On a stock Omarchy install, `SUPER + K` already opens the text keybinding
 list. `SUPER + ALT + K` and `SUPER + CTRL + K` open the Tmux and Herdr
 lists, so `SUPER + SHIFT + K` is the free neighbor of those shortcuts.
 
-Omarchy binds workspace numbers as keycodes (`SUPER + code:12` rather than
-`SUPER + 3`). Hyprland consumes those chords unless an empty submap is
-active while the overlay is open. Append `hypr/visual-keybindings.lua` to
-`~/.config/hypr/bindings.lua`, then `hyprctl reload`.
-
 Add a menu row in `~/.config/omarchy/extensions/omarchy-menu.jsonc` to
 open the overlay from Super+Space → Learn:
 
