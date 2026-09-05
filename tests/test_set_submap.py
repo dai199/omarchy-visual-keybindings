@@ -8,20 +8,25 @@ SCRIPT = ROOT / "scripts" / "set-submap"
 
 
 class SetSubmapTest(unittest.TestCase):
-    def test_rejects_unknown_submap_names(self):
+    def test_rejects_unknown_modes(self):
         result = subprocess.run(
-            [str(SCRIPT), "not-a-submap"],
+            [str(SCRIPT), "not-a-mode"],
             check=False,
             capture_output=True,
             text=True,
         )
         self.assertNotEqual(result.returncode, 0)
-        self.assertIn("unsupported submap", result.stderr)
 
-    def test_registers_the_submap_itself(self):
-        source = SCRIPT.read_text(encoding="utf-8")
-        self.assertIn("hl.define_submap", source)
-        self.assertIn("code:10-19", source)
+    def test_pause_prints_runtime_definition(self):
+        result = subprocess.run(
+            [str(SCRIPT), "pause", "--print-lua", "--no-eval"],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(result.returncode, 0)
+        self.assertIn("hl.define_submap", result.stdout)
+        self.assertIn("visual-keybindings", result.stdout)
 
 
 if __name__ == "__main__":

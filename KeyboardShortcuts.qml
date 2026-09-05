@@ -185,7 +185,7 @@ Item {
     editorOpen = false
     saveNotice = ""
     opened = true
-    setCompositorSubmap("visual-keybindings")
+    setCompositorSubmap("pause")
     reload()
     Qt.callLater(function() { keyCatcher.forceActiveFocus() })
   }
@@ -258,7 +258,7 @@ Item {
     WlrLayershell.layer: WlrLayer.Overlay
     WlrLayershell.keyboardFocus: WlrKeyboardFocus.Exclusive
     exclusionMode: ExclusionMode.Ignore
-    onVisibleChanged: root.setCompositorSubmap(visible ? "visual-keybindings" : "reset")
+    onVisibleChanged: root.setCompositorSubmap(visible ? "pause" : "reset")
 
     ShortcutInhibitor {
       window: panel

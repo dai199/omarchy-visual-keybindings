@@ -1,0 +1,8 @@
+{
+  "pluginId": "dai199.visual-keybindings",
+  "hyprland": {
+    "submap": "visual-keybindings",
+    "autoDefine": true,
+    "closeKeys": "SUPER + SHIFT + K"
+  }
+}

@@ -1,8 +1,10 @@
 .pragma library
 
+// Layer 1: physical identity. See docs/input-layers.md.
+// Keep tables in sync with scripts/key_identity.py.
+
 var modifierOrder = ["SUPER", "SHIFT", "CTRL", "ALT"]
 
-// Keep in sync with scripts/key_identity.py. Tests compare the two tables.
 var scanCodeToKeyId = ({
   2: "1", 3: "2", 4: "3", 5: "4", 6: "5", 7: "6", 8: "7", 9: "8",
   10: "1", 11: "2", 12: "3", 13: "4", 14: "5",

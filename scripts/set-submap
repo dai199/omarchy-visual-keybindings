@@ -1,27 +1,13 @@
-#!/bin/bash
-# Pause Omarchy compositor binds while the overlay is open.
-# Workspace chords are SUPER + code:10-19, which Hyprland consumes even with
-# exclusive layer-shell focus. An empty-enough submap lets those keys reach us.
-set -euo pipefail
-name="${1:-reset}"
+#!/usr/bin/env python3
+"""Enter or leave the compositor pause submap. Modes: pause | reset."""
 
-case "$name" in
-reset)
-  hyprctl eval 'hl.dispatch(hl.dsp.submap("reset"))'
-  ;;
-visual-keybindings)
-  hyprctl eval '
-hl.define_submap("visual-keybindings", function()
-  hl.bind("SUPER + SHIFT + K", function()
-    hl.dispatch(hl.dsp.submap("reset"))
-    hl.dispatch(hl.dsp.exec_cmd("omarchy-shell shell hide dai199.visual-keybindings"))
-  end)
-end)
-hl.dispatch(hl.dsp.submap("visual-keybindings"))
-'
-  ;;
-*)
-  echo "unsupported submap: $name" >&2
-  exit 1
-  ;;
-esac
+from __future__ import annotations
+
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from compositor import main
+
+if __name__ == "__main__":
+    raise SystemExit(main())

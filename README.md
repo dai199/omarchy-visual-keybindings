@@ -88,6 +88,10 @@ python3 -m unittest discover -s tests -v
 Files below `~/.config/omarchy/plugins/` are watched by Omarchy Shell and
 reload automatically while developing.
 
+Keyboard capture is split into physical identity, compositor pause, and
+user policy. Defaults need no extra Hyprland config. To own the pause
+submap later, see `docs/input-layers.md`.
+
 ## Roadmap
 
 - JIS keyboard layout
