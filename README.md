@@ -16,7 +16,8 @@ in use and which keys are still available.
 - Physical modifier key tracking while the overlay is focused
 - Used and available key states
 - Shortcut descriptions on selection
-- Shortcut creation for available key combinations
+- Shortcut creation, editing, and removal
+- Omarchy defaults distinguished from user overrides
 - Automatic backup, validation, and rollback when saving
 - Automatic refresh whenever the overlay opens
 - Theme integration with Omarchy Shell
@@ -96,7 +97,6 @@ submap later, see `docs/input-layers.md`.
 
 - JIS keyboard layout
 - Search and category filters
-- Distinguish Omarchy defaults from user overrides
 - Conflict detection
 
 ## License

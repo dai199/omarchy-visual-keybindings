@@ -179,3 +179,17 @@ function luaString(value) {
 function bindPreview(shortcut, description, command) {
   return "o.bind(" + luaString(shortcut) + ", " + luaString(description) + ", " + luaString(command) + ")"
 }
+
+function originLabel(origin) {
+  if (origin === "plugin") return "Added here"
+  if (origin === "user") return "User override"
+  if (origin === "omarchy") return "Omarchy default"
+  return ""
+}
+
+function hasUserOrigin(matches) {
+  for (var i = 0; i < matches.length; i++) {
+    if (matches[i].origin === "user" || matches[i].origin === "plugin") return true
+  }
+  return false
+}

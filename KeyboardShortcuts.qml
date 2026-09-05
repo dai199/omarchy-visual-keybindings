@@ -16,6 +16,7 @@ Item {
   property string loadError: ""
   property string selectedKey: ""
   property bool editorOpen: false
+  property string editorMode: "create"
   property string editorDescription: ""
   property string editorCommand: ""
   property string saveError: ""
@@ -38,7 +39,7 @@ Item {
   readonly property int cardWidth: Math.min(panel.width - Style.gapsOut * 2, unit * 15.5 + Style.space(56))
   readonly property int cardHeight: Math.min(
     panel.height - Style.gapsOut * 2,
-    unit * 6 + keyGap * 5 + Style.space(190)
+    unit * 6 + keyGap * 5 + Style.space(220)
   )
 
   function pluginPath(name) {
@@ -104,10 +105,20 @@ Item {
     return selectedModifiers.concat([selectedKey]).join(" + ")
   }
 
-  function beginEditor() {
-    if (!selectedKey || selectedBindings().length) return
-    editorDescription = ""
-    editorCommand = ""
+  function beginEditor(mode) {
+    var matches = selectedBindings()
+    if (!selectedKey) return
+    if (mode === "edit") {
+      if (!matches.length) return
+      editorMode = "edit"
+      editorDescription = matches[0].description || ""
+      editorCommand = matches[0].command || ""
+    } else {
+      if (matches.length) return
+      editorMode = "create"
+      editorDescription = ""
+      editorCommand = ""
+    }
     saveError = ""
     editorOpen = true
     Qt.callLater(function() { descriptionInput.forceActiveFocus() })
@@ -138,15 +149,36 @@ Item {
     Qt.callLater(function() { keyCatcher.forceActiveFocus() })
   }
 
-  function saveBinding() {
-    if (!editorDescription.trim() || !editorCommand.trim() || saveProcess.running) return
+  function bindingArgs() {
     var args = [pluginPath("scripts/add-binding")]
     var modifiers = selectedModifiers
     for (var i = 0; i < modifiers.length; i++) args.push("--modifier", modifiers[i])
     args.push("--key", selectedKey)
+    return args
+  }
+
+  function saveBinding() {
+    if (!editorDescription.trim() || !editorCommand.trim() || saveProcess.running) return
+    var args = bindingArgs()
+    if (editorMode === "edit") {
+      args.push("--replace")
+      var matches = selectedBindings()
+      if (matches.length) args.push("--previous", matches[0].description || "")
+    }
     args.push("--description", editorDescription.trim())
     args.push("--command", editorCommand.trim())
     saveError = ""
+    saveProcess.command = args
+    saveProcess.running = true
+  }
+
+  function removeBinding() {
+    if (!selectedKey || !selectedBindings().length || saveProcess.running) return
+    var args = bindingArgs()
+    args.push("--remove")
+    args.push("--previous", selectedBindings()[0].description || "")
+    saveError = ""
+    saveNotice = ""
     saveProcess.command = args
     saveProcess.running = true
   }
@@ -240,7 +272,10 @@ Item {
         root.selectedModifiers = []
         root.selectedKey = ""
         root.heldModifiers = KeyboardModel.emptyModifiers()
-        root.saveNotice = "Saved " + result.shortcut
+        var prefix = "Saved "
+        if (result.action === "replaced") prefix = "Updated "
+        if (result.action === "removed") prefix = "Removed "
+        root.saveNotice = prefix + result.shortcut
         root.reload()
         Qt.callLater(function() { keyCatcher.forceActiveFocus() })
       } else {
@@ -474,7 +509,7 @@ Item {
 
         Rectangle {
           width: parent.width
-          height: Style.space(110)
+          height: Style.space(148)
           radius: root.cornerRadius
           color: "transparent"
           border.color: root.border
@@ -513,32 +548,89 @@ Item {
                 var matches = root.selectedBindings()
                 if (!matches.length) return "Available — no configured shortcut uses this combination."
                 var descriptions = []
-                for (var i = 0; i < matches.length; i++) descriptions.push(matches[i].description)
+                for (var i = 0; i < matches.length; i++) {
+                  var label = KeyboardModel.originLabel(matches[i].origin)
+                  var line = matches[i].description || "Configured shortcut"
+                  if (label) line = label + " — " + line
+                  if (matches[i].command) line += " · " + matches[i].command
+                  descriptions.push(line)
+                }
                 return descriptions.join("  •  ")
               }
             }
 
-            Rectangle {
-              visible: root.selectedKey !== "" && root.selectedBindings().length === 0
-              width: Style.space(128)
-              height: Style.space(30)
-              radius: root.cornerRadius
-              color: createMouse.containsMouse ? root.selectedBackground : "transparent"
-              border.color: root.selectedBackground
-              border.width: 1
-              Text {
-                anchors.centerIn: parent
-                text: "Create shortcut"
-                color: createMouse.containsMouse ? root.selectedText : root.foreground
-                font.family: Style.font.menuFamily
-                font.pixelSize: Style.font.body
+            Row {
+              spacing: Style.spacing.sm
+              visible: root.selectedKey !== ""
+              Rectangle {
+                visible: root.selectedBindings().length === 0
+                width: Style.space(128)
+                height: Style.space(30)
+                radius: root.cornerRadius
+                color: createMouse.containsMouse ? root.selectedBackground : "transparent"
+                border.color: root.selectedBackground
+                border.width: 1
+                Text {
+                  anchors.centerIn: parent
+                  text: "Create shortcut"
+                  color: createMouse.containsMouse ? root.selectedText : root.foreground
+                  font.family: Style.font.menuFamily
+                  font.pixelSize: Style.font.body
+                }
+                MouseArea {
+                  id: createMouse
+                  anchors.fill: parent
+                  hoverEnabled: true
+                  cursorShape: Qt.PointingHandCursor
+                  onClicked: root.beginEditor("create")
+                }
               }
-              MouseArea {
-                id: createMouse
-                anchors.fill: parent
-                hoverEnabled: true
-                cursorShape: Qt.PointingHandCursor
-                onClicked: root.beginEditor()
+              Rectangle {
+                visible: root.selectedBindings().length > 0
+                width: Style.space(72)
+                height: Style.space(30)
+                radius: root.cornerRadius
+                color: editMouse.containsMouse ? root.selectedBackground : "transparent"
+                border.color: root.selectedBackground
+                border.width: 1
+                Text {
+                  anchors.centerIn: parent
+                  text: "Edit"
+                  color: editMouse.containsMouse ? root.selectedText : root.foreground
+                  font.family: Style.font.menuFamily
+                  font.pixelSize: Style.font.body
+                }
+                MouseArea {
+                  id: editMouse
+                  anchors.fill: parent
+                  hoverEnabled: true
+                  cursorShape: Qt.PointingHandCursor
+                  onClicked: root.beginEditor("edit")
+                }
+              }
+              Rectangle {
+                visible: root.selectedBindings().length > 0
+                width: Style.space(88)
+                height: Style.space(30)
+                radius: root.cornerRadius
+                color: removeMouse.containsMouse ? root.selectedBackground : "transparent"
+                border.color: root.border
+                border.width: 1
+                Text {
+                  anchors.centerIn: parent
+                  text: "Remove"
+                  color: removeMouse.containsMouse ? root.selectedText : root.foreground
+                  font.family: Style.font.menuFamily
+                  font.pixelSize: Style.font.body
+                }
+                MouseArea {
+                  id: removeMouse
+                  anchors.fill: parent
+                  enabled: !saveProcess.running
+                  hoverEnabled: true
+                  cursorShape: Qt.PointingHandCursor
+                  onClicked: root.removeBinding()
+                }
               }
             }
           }
@@ -570,7 +662,7 @@ Item {
           spacing: Style.spacing.md
 
           Text {
-            text: "Create " + root.selectedShortcut()
+            text: (root.editorMode === "edit" ? "Edit " : "Create ") + root.selectedShortcut()
             color: root.foreground
             font.family: Style.font.menuFamily
             font.pixelSize: Style.font.heading

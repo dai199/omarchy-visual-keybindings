@@ -6,7 +6,14 @@ drifts from this module.
 
 from __future__ import annotations
 
+import re
+
 MODIFIER_ORDER = ("SUPER", "SHIFT", "CTRL", "ALT")
+KEY_ALIASES = {
+    "ENTER": "RETURN",
+    "ESC": "ESCAPE",
+}
+CODE_PATTERN = re.compile(r"^CODE:(\d+)$")
 
 # X11 keycodes (evdev + 8) plus evdev KEY_1..KEY_8 for the digit row.
 SCAN_CODE_TO_KEY_ID = {
@@ -124,3 +131,22 @@ def key_id_from_text(text: str) -> str:
 
 def key_id_from_x11_code(code: int) -> str:
     return X11_KEYCODE_TO_DIGIT.get(code, "")
+
+
+def normalize_key_token(value: str) -> str:
+    key = value.strip().upper()
+    if key == "" or key == " ":
+        return "SPACE"
+    coded = CODE_PATTERN.match(key)
+    if coded:
+        return key_id_from_x11_code(int(coded.group(1))) or key
+    return KEY_ALIASES.get(key, key)
+
+
+def normalize_shortcut(text: str) -> str:
+    tokens = [token.strip().upper() for token in re.split(r"[\s+]+", text) if token.strip()]
+    modifiers = [modifier for modifier in MODIFIER_ORDER if modifier in tokens]
+    keys = [normalize_key_token(token) for token in tokens if token not in MODIFIER_ORDER]
+    if not keys:
+        return ""
+    return " + ".join([*modifiers, keys[-1]])

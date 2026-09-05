@@ -13,6 +13,11 @@ import sys
 import tempfile
 from pathlib import Path
 
+_SCRIPTS = Path(__file__).resolve().parent
+if str(_SCRIPTS) not in sys.path:
+    sys.path.insert(0, str(_SCRIPTS))
+from user_bindings import origin_for, parse_user_bindings, write_disable, write_override
+
 MODIFIER_ORDER = ("SUPER", "SHIFT", "CTRL", "ALT")
 VALID_KEYS = {
     "ESCAPE", "F1", "F2", "F3", "F4", "F5", "F6", "F7", "F8", "F9",
@@ -135,12 +140,90 @@ def add_binding(
     return backup
 
 
+def apply_config_text(
+    config: Path,
+    new_text: str,
+    reload_config: bool = True,
+) -> Path:
+    original = config.read_text(encoding="utf-8") if config.exists() else ""
+    timestamp = dt.datetime.now().strftime("%Y%m%d-%H%M%S")
+    backup = config.with_name(f"{config.name}.bak.{timestamp}")
+    if config.exists():
+        shutil.copy2(config, backup)
+    else:
+        backup.write_text("", encoding="utf-8")
+    write_atomically(config, new_text if new_text.endswith("\n") else new_text + "\n")
+    if not reload_config:
+        return backup
+    reload_result = subprocess.run(["hyprctl", "reload"], check=False, capture_output=True, text=True)
+    errors_result = subprocess.run(
+        ["hyprctl", "configerrors"], check=False, capture_output=True, text=True
+    )
+    errors = errors_result.stdout.strip()
+    if reload_result.returncode != 0 or errors_result.returncode != 0 or errors:
+        write_atomically(config, original)
+        subprocess.run(["hyprctl", "reload"], check=False, capture_output=True, text=True)
+        detail = errors or reload_result.stderr.strip() or "Hyprland rejected the configuration"
+        raise AddBindingError(f"The change was rolled back: {detail}")
+    return backup
+
+
+def replace_binding(
+    config: Path,
+    provider: Path,
+    shortcut_text: str,
+    description: str,
+    command: str,
+    previous: str = "",
+    reload_config: bool = True,
+) -> Path:
+    if shortcut_text.upper() not in configured_shortcuts(provider):
+        raise AddBindingError(f"{shortcut_text} is not configured")
+    original = config.read_text(encoding="utf-8") if config.exists() else ""
+    user_binds = parse_user_bindings(original)
+    origin = origin_for(shortcut_text, user_binds)
+    unbind_first = origin != "plugin"
+    new_text = write_override(
+        original,
+        shortcut_text,
+        description,
+        command,
+        previous or "",
+        unbind_first,
+    )
+    return apply_config_text(config, new_text, reload_config)
+
+
+def remove_binding(
+    config: Path,
+    provider: Path,
+    shortcut_text: str,
+    previous: str = "",
+    reload_config: bool = True,
+) -> Path:
+    if shortcut_text.upper() not in configured_shortcuts(provider):
+        raise AddBindingError(f"{shortcut_text} is not configured")
+    original = config.read_text(encoding="utf-8") if config.exists() else ""
+    user_binds = parse_user_bindings(original)
+    origin = origin_for(shortcut_text, user_binds)
+    new_text = write_disable(
+        original,
+        shortcut_text,
+        previous or "",
+        origin == "plugin",
+    )
+    return apply_config_text(config, new_text, reload_config)
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--modifier", action="append", default=[])
     parser.add_argument("--key", required=True)
-    parser.add_argument("--description", required=True)
-    parser.add_argument("--command", required=True)
+    parser.add_argument("--description", default="")
+    parser.add_argument("--command", default="")
+    parser.add_argument("--replace", action="store_true")
+    parser.add_argument("--remove", action="store_true")
+    parser.add_argument("--previous", default="")
     parser.add_argument(
         "--config",
         type=Path,
@@ -153,16 +236,49 @@ def main() -> int:
 
     provider = args.provider or Path(__file__).with_name("list-bindings")
     try:
+        if args.replace and args.remove:
+            raise AddBindingError("Choose either --replace or --remove")
         shortcut_text = shortcut(args.modifier, args.key)
-        backup = add_binding(
-            args.config,
-            provider,
-            shortcut_text,
-            args.description,
-            args.command,
-            not args.no_reload,
+        if args.remove:
+            backup = remove_binding(
+                args.config,
+                provider,
+                shortcut_text,
+                args.previous,
+                not args.no_reload,
+            )
+            action = "removed"
+        elif args.replace:
+            backup = replace_binding(
+                args.config,
+                provider,
+                shortcut_text,
+                args.description,
+                args.command,
+                args.previous,
+                not args.no_reload,
+            )
+            action = "replaced"
+        else:
+            backup = add_binding(
+                args.config,
+                provider,
+                shortcut_text,
+                args.description,
+                args.command,
+                not args.no_reload,
+            )
+            action = "added"
+        print(
+            json.dumps(
+                {
+                    "ok": True,
+                    "shortcut": shortcut_text,
+                    "backup": str(backup),
+                    "action": action,
+                }
+            )
         )
-        print(json.dumps({"ok": True, "shortcut": shortcut_text, "backup": str(backup)}))
         return 0
     except (AddBindingError, OSError) as error:
         print(json.dumps({"ok": False, "error": str(error)}, ensure_ascii=False))

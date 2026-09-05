@@ -4,6 +4,7 @@ SHIFT ALT + D                      → Download Video from Web App
 SUPER + SPACE                      → Omarchy menu
 SUPER + CTRL + V                   → Clipboard manager
 SUPER SHIFT + 3                    → Move window to workspace 3
+SHIFT ALT + 4                      → Screenshot
 SUPER + code:12                    → Switch to workspace 3
 ALT + PRINT                        → Screenrecording
 invalid line without an arrow

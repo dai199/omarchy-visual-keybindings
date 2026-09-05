@@ -13,52 +13,39 @@ from pathlib import Path
 _SCRIPTS = Path(__file__).resolve().parent
 if str(_SCRIPTS) not in sys.path:
     sys.path.insert(0, str(_SCRIPTS))
-from key_identity import MODIFIER_ORDER, key_id_from_x11_code
+from key_identity import MODIFIER_ORDER, normalize_shortcut
+from user_bindings import command_for, origin_for, parse_user_bindings
 
 MODIFIERS = MODIFIER_ORDER
 ROW_PATTERN = re.compile(r"^\s*(.*?)\s+→\s+(.+?)\s*$")
-CODE_PATTERN = re.compile(r"^CODE:(\d+)$")
 
 
-def normalize_key(value: str) -> str:
-    aliases = {
-        "ENTER": "RETURN",
-        "ESC": "ESCAPE",
-        " ": "SPACE",
-    }
-    key = value.strip().upper()
-    coded = CODE_PATTERN.match(key)
-    if coded:
-        return key_id_from_x11_code(int(coded.group(1))) or key
-    return aliases.get(key, key)
-
-
-def parse_bindings(output: str) -> list[dict[str, object]]:
+def parse_bindings(output: str, user_lua: str = "") -> list[dict[str, object]]:
     bindings: list[dict[str, object]] = []
+    user_binds = parse_user_bindings(user_lua)
 
     for line in output.splitlines():
         match = ROW_PATTERN.match(line)
         if not match:
             continue
 
-        shortcut, description = match.groups()
-        if "+" in shortcut:
-            modifier_text, key_text = shortcut.rsplit("+", 1)
-            modifier_tokens = modifier_text.replace("+", " ").upper().split()
-            modifiers = [modifier for modifier in MODIFIERS if modifier in modifier_tokens]
-            key = normalize_key(key_text)
-        else:
-            modifiers = []
-            key = normalize_key(shortcut)
-
+        shortcut_text, description = match.groups()
+        shortcut = normalize_shortcut(shortcut_text)
+        if not shortcut:
+            continue
+        parts = shortcut.split(" + ")
+        key = parts[-1]
+        modifiers = [part for part in parts[:-1] if part in MODIFIERS]
         if not key or key in MODIFIERS:
             continue
         bindings.append(
             {
-                "shortcut": " + ".join([*modifiers, key]),
+                "shortcut": shortcut,
                 "modifiers": modifiers,
                 "key": str(key),
                 "description": description.strip(),
+                "origin": origin_for(shortcut, user_binds),
+                "command": command_for(shortcut, user_binds),
             }
         )
 
@@ -83,11 +70,20 @@ def read_source(input_path: Path | None) -> str:
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--input", type=Path, help="Parse a saved command output")
+    parser.add_argument(
+        "--user-config",
+        type=Path,
+        default=Path.home() / ".config" / "hypr" / "bindings.lua",
+        help=argparse.SUPPRESS,
+    )
     args = parser.parse_args()
 
     try:
         source = read_source(args.input)
-        json.dump(parse_bindings(source), sys.stdout, ensure_ascii=False)
+        user_lua = ""
+        if args.user_config and args.user_config.exists():
+            user_lua = args.user_config.read_text(encoding="utf-8")
+        json.dump(parse_bindings(source, user_lua), sys.stdout, ensure_ascii=False)
         sys.stdout.write("\n")
         return 0
     except (OSError, RuntimeError) as error:
