@@ -10,8 +10,14 @@ import subprocess
 import sys
 from pathlib import Path
 
-MODIFIERS = ("SUPER", "SHIFT", "CTRL", "ALT")
+_SCRIPTS = Path(__file__).resolve().parent
+if str(_SCRIPTS) not in sys.path:
+    sys.path.insert(0, str(_SCRIPTS))
+from key_identity import MODIFIER_ORDER, key_id_from_x11_code
+
+MODIFIERS = MODIFIER_ORDER
 ROW_PATTERN = re.compile(r"^\s*(.*?)\s+→\s+(.+?)\s*$")
+CODE_PATTERN = re.compile(r"^CODE:(\d+)$")
 
 
 def normalize_key(value: str) -> str:
@@ -21,6 +27,9 @@ def normalize_key(value: str) -> str:
         " ": "SPACE",
     }
     key = value.strip().upper()
+    coded = CODE_PATTERN.match(key)
+    if coded:
+        return key_id_from_x11_code(int(coded.group(1))) or key
     return aliases.get(key, key)
 
 
@@ -48,7 +57,7 @@ def parse_bindings(output: str) -> list[dict[str, object]]:
             {
                 "shortcut": " + ".join([*modifiers, key]),
                 "modifiers": modifiers,
-                "key": key,
+                "key": str(key),
                 "description": description.strip(),
             }
         )

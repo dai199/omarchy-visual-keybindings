@@ -21,8 +21,8 @@ Item {
   property string saveError: ""
   property string saveNotice: ""
 
-  property var pinnedModifiers: ({ "SUPER": false, "SHIFT": false, "CTRL": false, "ALT": false })
-  property var heldModifiers: ({ "SUPER": false, "SHIFT": false, "CTRL": false, "ALT": false })
+  property var pinnedModifiers: KeyboardModel.emptyModifiers()
+  property var heldModifiers: KeyboardModel.emptyModifiers()
   property var selectedModifiers: []
 
   property color background: Color.menu.background
@@ -47,12 +47,7 @@ Item {
   }
 
   function activeModifiers() {
-    var active = []
-    for (var i = 0; i < KeyboardModel.modifierOrder.length; i++) {
-      var name = KeyboardModel.modifierOrder[i]
-      if (pinnedModifiers[name] || heldModifiers[name]) active.push(name)
-    }
-    return active
+    return KeyboardModel.activeModifierNames(pinnedModifiers, heldModifiers)
   }
 
   function modifierActive(name) {
@@ -60,60 +55,25 @@ Item {
   }
 
   function clearModifiers() {
-    pinnedModifiers = ({ "SUPER": false, "SHIFT": false, "CTRL": false, "ALT": false })
-    heldModifiers = ({ "SUPER": false, "SHIFT": false, "CTRL": false, "ALT": false })
+    pinnedModifiers = KeyboardModel.emptyModifiers()
+    heldModifiers = KeyboardModel.emptyModifiers()
     selectedModifiers = []
     selectedKey = ""
   }
 
   function toggleModifier(name) {
-    var next = {}
-    for (var i = 0; i < KeyboardModel.modifierOrder.length; i++) {
-      var modifierName = KeyboardModel.modifierOrder[i]
-      next[modifierName] = modifierName === name ? !pinnedModifiers[modifierName] : pinnedModifiers[modifierName]
-    }
-    pinnedModifiers = next
+    pinnedModifiers = KeyboardModel.copyModifiers(pinnedModifiers, name, !pinnedModifiers[name])
     selectedModifiers = []
     selectedKey = ""
   }
 
   function setHeldModifier(name, value) {
     if (heldModifiers[name] === value) return
-    var next = {}
-    for (var i = 0; i < KeyboardModel.modifierOrder.length; i++) {
-      var modifierName = KeyboardModel.modifierOrder[i]
-      next[modifierName] = modifierName === name ? value : heldModifiers[modifierName]
-    }
-    heldModifiers = next
-    // Keep selectedKey. Releasing Super after Super+B would otherwise
-    // wipe the detail panel before the user can read it.
-  }
-
-  function modifierNameFromScanCode(scanCode) {
-    // Qt Wayland often reports X11 keycodes (evdev + 8). Accept both.
-    var names = ({
-      29: "CTRL", 37: "CTRL", 97: "CTRL", 105: "CTRL",
-      42: "SHIFT", 50: "SHIFT", 54: "SHIFT", 62: "SHIFT",
-      56: "ALT", 64: "ALT", 100: "ALT", 108: "ALT",
-      125: "SUPER", 133: "SUPER", 126: "SUPER", 134: "SUPER"
-    })
-    return names[scanCode] || ""
-  }
-
-  function modifierNameFromKey(key) {
-    if (key === Qt.Key_Meta || key === Qt.Key_Super_L || key === Qt.Key_Super_R)
-      return "SUPER"
-    if (key === Qt.Key_Shift)
-      return "SHIFT"
-    if (key === Qt.Key_Control)
-      return "CTRL"
-    if (key === Qt.Key_Alt || key === Qt.Key_AltGr)
-      return "ALT"
-    return ""
+    heldModifiers = KeyboardModel.copyModifiers(heldModifiers, name, value)
   }
 
   function modifierNameFromEvent(event) {
-    return modifierNameFromScanCode(event.nativeScanCode) || modifierNameFromKey(event.key)
+    return KeyboardModel.modifierFromScanCode(event.nativeScanCode) || KeyboardModel.modifierFromQtKey(event.key)
   }
 
   function updatePhysicalModifier(event, pressed) {
@@ -122,94 +82,14 @@ Item {
       setHeldModifier(name, pressed)
       return
     }
-    if (!pressed && heldModifiers.SHIFT === true && event.key === Qt.Key_CapsLock)
-      // Some XKB keymaps report a Shift release as CapsLock. Only apply this
-      // compatibility path while Shift is known to be held.
+    if (!pressed && heldModifiers.SHIFT === true && KeyboardModel.isCapsLockKey(event.key))
       setHeldModifier("SHIFT", false)
   }
 
-  function keyIdFromScanCode(scanCode) {
-    // Digit-row identity must follow the physical key, not the shifted
-    // symbol. Hyprland stores SUPER+SHIFT+3 as key 3, but XKB reports
-    // Shift+3 as numbersign. Qt Wayland scan codes on this stack are
-    // X11 keycodes (evdev + 8); also accept evdev KEY_1..KEY_8.
-    var ids = ({
-      2: "1", 3: "2", 4: "3", 5: "4", 6: "5", 7: "6", 8: "7", 9: "8",
-      10: "1", 11: "2", 12: "3", 13: "4", 14: "5",
-      15: "6", 16: "7", 17: "8", 18: "9", 19: "0",
-      20: "MINUS", 21: "EQUAL", 22: "BACKSPACE", 23: "TAB",
-      34: "BRACKETLEFT", 35: "BRACKETRIGHT", 36: "RETURN",
-      47: "SEMICOLON", 48: "APOSTROPHE", 49: "GRAVE",
-      51: "BACKSLASH", 59: "COMMA", 60: "PERIOD", 61: "SLASH",
-      65: "SPACE"
-    })
-    return ids[scanCode] || ""
-  }
-
-  function keyIdFromKey(key) {
-    if (key >= Qt.Key_A && key <= Qt.Key_Z)
-      return String.fromCharCode(key)
-    if (key >= Qt.Key_0 && key <= Qt.Key_9)
-      return String.fromCharCode(key)
-
-    var shiftedDigits = ({})
-    shiftedDigits[Qt.Key_Exclam] = "1"
-    shiftedDigits[Qt.Key_At] = "2"
-    shiftedDigits[Qt.Key_NumberSign] = "3"
-    shiftedDigits[Qt.Key_Dollar] = "4"
-    shiftedDigits[Qt.Key_Percent] = "5"
-    shiftedDigits[Qt.Key_AsciiCircum] = "6"
-    shiftedDigits[Qt.Key_Ampersand] = "7"
-    shiftedDigits[Qt.Key_Asterisk] = "8"
-    shiftedDigits[Qt.Key_ParenLeft] = "9"
-    shiftedDigits[Qt.Key_ParenRight] = "0"
-    if (shiftedDigits[key]) return shiftedDigits[key]
-
-    var specialKeys = ({})
-    specialKeys[Qt.Key_Space] = "SPACE"
-    specialKeys[Qt.Key_Return] = "RETURN"
-    specialKeys[Qt.Key_Enter] = "RETURN"
-    specialKeys[Qt.Key_Tab] = "TAB"
-    specialKeys[Qt.Key_Backspace] = "BACKSPACE"
-    specialKeys[Qt.Key_QuoteLeft] = "GRAVE"
-    specialKeys[Qt.Key_AsciiTilde] = "GRAVE"
-    specialKeys[Qt.Key_Minus] = "MINUS"
-    specialKeys[Qt.Key_Underscore] = "MINUS"
-    specialKeys[Qt.Key_Equal] = "EQUAL"
-    specialKeys[Qt.Key_Plus] = "EQUAL"
-    specialKeys[Qt.Key_BracketLeft] = "BRACKETLEFT"
-    specialKeys[Qt.Key_BraceLeft] = "BRACKETLEFT"
-    specialKeys[Qt.Key_BracketRight] = "BRACKETRIGHT"
-    specialKeys[Qt.Key_BraceRight] = "BRACKETRIGHT"
-    specialKeys[Qt.Key_Backslash] = "BACKSLASH"
-    specialKeys[Qt.Key_Bar] = "BACKSLASH"
-    specialKeys[Qt.Key_Semicolon] = "SEMICOLON"
-    specialKeys[Qt.Key_Colon] = "SEMICOLON"
-    specialKeys[Qt.Key_Apostrophe] = "APOSTROPHE"
-    specialKeys[Qt.Key_Comma] = "COMMA"
-    specialKeys[Qt.Key_Less] = "COMMA"
-    specialKeys[Qt.Key_Period] = "PERIOD"
-    specialKeys[Qt.Key_Greater] = "PERIOD"
-    specialKeys[Qt.Key_Slash] = "SLASH"
-    specialKeys[Qt.Key_Question] = "SLASH"
-    if (key >= Qt.Key_F1 && key <= Qt.Key_F12)
-      return "F" + String(key - Qt.Key_F1 + 1)
-    return specialKeys[key] || ""
-  }
-
-  function keyIdFromText(text) {
-    if (!text) return ""
-    if (text >= "0" && text <= "9") return text
-    var shifted = ({
-      "!": "1", "@": "2", "#": "3", "$": "4", "%": "5",
-      "^": "6", "&": "7", "*": "8", "(": "9", ")": "0",
-      "\"": "2"
-    })
-    return shifted[text] || ""
-  }
-
   function keyIdFromEvent(event) {
-    return keyIdFromScanCode(event.nativeScanCode) || keyIdFromKey(event.key) || keyIdFromText(event.text)
+    return KeyboardModel.keyIdFromScanCode(event.nativeScanCode)
+      || KeyboardModel.keyIdFromQtKey(event.key)
+      || KeyboardModel.keyIdFromText(event.text)
   }
 
   function matchesFor(keyId) {
@@ -254,7 +134,7 @@ Item {
     saveError = ""
     selectedModifiers = []
     selectedKey = ""
-    heldModifiers = ({ "SUPER": false, "SHIFT": false, "CTRL": false, "ALT": false })
+    heldModifiers = KeyboardModel.emptyModifiers()
     Qt.callLater(function() { keyCatcher.forceActiveFocus() })
   }
 
@@ -359,7 +239,7 @@ Item {
         root.editorOpen = false
         root.selectedModifiers = []
         root.selectedKey = ""
-        root.heldModifiers = ({ "SUPER": false, "SHIFT": false, "CTRL": false, "ALT": false })
+        root.heldModifiers = KeyboardModel.emptyModifiers()
         root.saveNotice = "Saved " + result.shortcut
         root.reload()
         Qt.callLater(function() { keyCatcher.forceActiveFocus() })
@@ -423,7 +303,7 @@ Item {
         focus: !root.editorOpen
         enabled: !root.editorOpen
         onActiveFocusChanged: if (!activeFocus)
-          root.heldModifiers = ({ "SUPER": false, "SHIFT": false, "CTRL": false, "ALT": false })
+          root.heldModifiers = KeyboardModel.emptyModifiers()
 
         Keys.priority: Keys.BeforeItem
         Keys.onPressed: function(event) {
@@ -775,7 +655,7 @@ Item {
               font.family: Style.font.menuFamily
               font.pixelSize: Style.font.body
               wrapMode: Text.WrapAnywhere
-              text: "o.bind(\"" + root.selectedShortcut() + "\", \"" + root.editorDescription + "\", \"" + root.editorCommand + "\")"
+              text: KeyboardModel.bindPreview(root.selectedShortcut(), root.editorDescription, root.editorCommand)
             }
           }
           Text {

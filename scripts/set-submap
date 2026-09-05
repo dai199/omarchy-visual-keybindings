@@ -1,4 +1,11 @@
 #!/bin/bash
 set -euo pipefail
 name="${1:-reset}"
+case "$name" in
+reset | visual-keybindings) ;;
+*)
+  echo "unsupported submap: $name" >&2
+  exit 1
+  ;;
+esac
 hyprctl eval "hl.dispatch(hl.dsp.submap(\"${name}\"))"
