@@ -8,3 +8,8 @@ o.bind(
 
 -- Added by Visual Keybindings
 o.bind("SHIFT + ALT + 4", "Screenshot", "omarchy-capture-screenshot")
+
+-- Disabled by Visual Keybindings (was: Google Maps)
+hl.unbind("SUPER + SHIFT + S")
+
+-- hl.unbind("SUPER + SHIFT + B")

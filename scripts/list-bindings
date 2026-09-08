@@ -14,14 +14,36 @@ _SCRIPTS = Path(__file__).resolve().parent
 if str(_SCRIPTS) not in sys.path:
     sys.path.insert(0, str(_SCRIPTS))
 from key_identity import MODIFIER_ORDER, normalize_shortcut
-from user_bindings import command_for, origin_for, parse_user_bindings
+from user_bindings import (
+    command_for,
+    origin_for,
+    parse_user_bindings,
+    parse_user_unbinds,
+)
 
 MODIFIERS = MODIFIER_ORDER
 ROW_PATTERN = re.compile(r"^\s*(.*?)\s+→\s+(.+?)\s*$")
 
 
+def _row(shortcut: str, description: str, origin: str, command: str) -> dict[str, object] | None:
+    parts = shortcut.split(" + ")
+    key = parts[-1] if parts else ""
+    modifiers = [part for part in parts[:-1] if part in MODIFIERS]
+    if not key or key in MODIFIERS:
+        return None
+    return {
+        "shortcut": shortcut,
+        "modifiers": modifiers,
+        "key": str(key),
+        "description": description,
+        "origin": origin,
+        "command": command,
+    }
+
+
 def parse_bindings(output: str, user_lua: str = "") -> list[dict[str, object]]:
     bindings: list[dict[str, object]] = []
+    seen: set[str] = set()
     user_binds = parse_user_bindings(user_lua)
 
     for line in output.splitlines():
@@ -33,21 +55,24 @@ def parse_bindings(output: str, user_lua: str = "") -> list[dict[str, object]]:
         shortcut = normalize_shortcut(shortcut_text)
         if not shortcut:
             continue
-        parts = shortcut.split(" + ")
-        key = parts[-1]
-        modifiers = [part for part in parts[:-1] if part in MODIFIERS]
-        if not key or key in MODIFIERS:
-            continue
-        bindings.append(
-            {
-                "shortcut": shortcut,
-                "modifiers": modifiers,
-                "key": str(key),
-                "description": description.strip(),
-                "origin": origin_for(shortcut, user_binds),
-                "command": command_for(shortcut, user_binds),
-            }
+        row = _row(
+            shortcut,
+            description.strip(),
+            origin_for(shortcut, user_binds),
+            command_for(shortcut, user_binds),
         )
+        if not row:
+            continue
+        seen.add(shortcut)
+        bindings.append(row)
+
+    for shortcut, unbound in parse_user_unbinds(user_lua).items():
+        if shortcut in seen:
+            continue
+        previous = str(unbound.get("previous") or "").strip()
+        row = _row(shortcut, previous, "disabled", "")
+        if row:
+            bindings.append(row)
 
     return bindings
 

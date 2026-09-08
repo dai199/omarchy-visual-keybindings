@@ -16,7 +16,14 @@ from pathlib import Path
 _SCRIPTS = Path(__file__).resolve().parent
 if str(_SCRIPTS) not in sys.path:
     sys.path.insert(0, str(_SCRIPTS))
-from user_bindings import origin_for, parse_user_bindings, write_disable, write_override
+from user_bindings import (
+    origin_for,
+    parse_user_bindings,
+    parse_user_unbinds,
+    write_disable,
+    write_override,
+    write_restore,
+)
 
 MODIFIER_ORDER = ("SUPER", "SHIFT", "CTRL", "ALT")
 VALID_KEYS = {
@@ -76,7 +83,7 @@ def render_binding(shortcut_text: str, description: str, command: str) -> str:
     )
 
 
-def configured_shortcuts(provider: Path) -> set[str]:
+def listed_bindings(provider: Path) -> list[dict]:
     result = subprocess.run(
         [str(provider)], check=False, capture_output=True, text=True
     )
@@ -86,7 +93,17 @@ def configured_shortcuts(provider: Path) -> set[str]:
         rows = json.loads(result.stdout)
     except json.JSONDecodeError as error:
         raise AddBindingError("The keybinding provider returned invalid JSON") from error
-    return {str(row.get("shortcut", "")).upper() for row in rows}
+    if not isinstance(rows, list):
+        raise AddBindingError("The keybinding provider returned invalid JSON")
+    return [row for row in rows if isinstance(row, dict)]
+
+
+def configured_shortcuts(provider: Path) -> set[str]:
+    return {
+        str(row.get("shortcut", "")).upper()
+        for row in listed_bindings(provider)
+        if row.get("origin") != "disabled"
+    }
 
 
 def write_atomically(path: Path, content: str) -> None:
@@ -116,6 +133,19 @@ def add_binding(
         raise AddBindingError(f"{shortcut_text} is already configured")
 
     original = config.read_text(encoding="utf-8") if config.exists() else ""
+    unbinds = parse_user_unbinds(original)
+    if shortcut_text in unbinds:
+        previous = str(unbinds[shortcut_text].get("previous") or "")
+        new_text = write_override(
+            original,
+            shortcut_text,
+            description,
+            command,
+            previous,
+            True,
+        )
+        return apply_config_text(config, new_text, reload_config)
+
     timestamp = dt.datetime.now().strftime("%Y%m%d-%H%M%S")
     backup = config.with_name(f"{config.name}.bak.{timestamp}")
     if config.exists():
@@ -215,6 +245,19 @@ def remove_binding(
     return apply_config_text(config, new_text, reload_config)
 
 
+def restore_binding(
+    config: Path,
+    shortcut_text: str,
+    reload_config: bool = True,
+) -> Path:
+    original = config.read_text(encoding="utf-8") if config.exists() else ""
+    unbinds = parse_user_unbinds(original)
+    if shortcut_text not in unbinds:
+        raise AddBindingError(f"{shortcut_text} is not disabled")
+    new_text = write_restore(original, shortcut_text)
+    return apply_config_text(config, new_text, reload_config)
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--modifier", action="append", default=[])
@@ -223,6 +266,7 @@ def main() -> int:
     parser.add_argument("--command", default="")
     parser.add_argument("--replace", action="store_true")
     parser.add_argument("--remove", action="store_true")
+    parser.add_argument("--restore", action="store_true")
     parser.add_argument("--previous", default="")
     parser.add_argument(
         "--config",
@@ -236,10 +280,17 @@ def main() -> int:
 
     provider = args.provider or Path(__file__).with_name("list-bindings")
     try:
-        if args.replace and args.remove:
-            raise AddBindingError("Choose either --replace or --remove")
+        if sum([args.replace, args.remove, args.restore]) > 1:
+            raise AddBindingError("Choose only one of --replace, --remove, or --restore")
         shortcut_text = shortcut(args.modifier, args.key)
-        if args.remove:
+        if args.restore:
+            backup = restore_binding(
+                args.config,
+                shortcut_text,
+                not args.no_reload,
+            )
+            action = "restored"
+        elif args.remove:
             backup = remove_binding(
                 args.config,
                 provider,

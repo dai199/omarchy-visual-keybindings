@@ -23,6 +23,7 @@ Item {
   property string saveNotice: ""
   property bool descriptionLocked: false
   property string generatedDescription: ""
+  property bool removeConfirm: false
 
   property var pinnedModifiers: KeyboardModel.emptyModifiers()
   property var heldModifiers: KeyboardModel.emptyModifiers()
@@ -62,6 +63,7 @@ Item {
     heldModifiers = KeyboardModel.emptyModifiers()
     selectedModifiers = []
     selectedKey = ""
+    removeConfirm = false
   }
 
   function resetView() {
@@ -74,6 +76,7 @@ Item {
     pinnedModifiers = KeyboardModel.copyModifiers(pinnedModifiers, name, !pinnedModifiers[name])
     selectedModifiers = []
     selectedKey = ""
+    removeConfirm = false
   }
 
   function setHeldModifier(name, value) {
@@ -109,6 +112,10 @@ Item {
     return selectedKey ? KeyboardModel.bindingsFor(bindings, selectedKey, selectedModifiers) : []
   }
 
+  function selectedIsDisabled() {
+    return KeyboardModel.disabledOnly(selectedBindings())
+  }
+
   function selectedShortcut() {
     return selectedModifiers.concat([selectedKey]).join(" + ")
   }
@@ -122,7 +129,7 @@ Item {
       editorDescription = matches[0].description || ""
       editorCommand = matches[0].command || ""
     } else {
-      if (matches.length) return
+      if (matches.length && !KeyboardModel.disabledOnly(matches)) return
       editorMode = "create"
       editorDescription = ""
       editorCommand = ""
@@ -130,6 +137,7 @@ Item {
     generatedDescription = KeyboardModel.descriptionFromCommand(editorCommand)
     descriptionLocked = editorDescription.trim() !== "" && editorDescription !== generatedDescription
     saveError = ""
+    removeConfirm = false
     editorOpen = true
     Qt.callLater(function() { commandInput.forceActiveFocus() })
   }
@@ -161,8 +169,19 @@ Item {
     // after the editor closes and the real keys have been released.
     selectedModifiers = activeModifiers()
     selectedKey = keyData.id
+    removeConfirm = false
     if (selectedBindings().length === 0) beginEditor()
     else keyCatcher.forceActiveFocus()
+  }
+
+  function restoreBinding() {
+    if (!selectedIsDisabled() || saveProcess.running) return
+    var args = bindingArgs()
+    args.push("--restore")
+    saveError = ""
+    saveNotice = ""
+    saveProcess.command = args
+    saveProcess.running = true
   }
 
   function closeEditor() {
@@ -173,6 +192,7 @@ Item {
     selectedModifiers = []
     selectedKey = ""
     heldModifiers = KeyboardModel.emptyModifiers()
+    removeConfirm = false
     Qt.callLater(function() { keyCatcher.forceActiveFocus() })
   }
 
@@ -200,7 +220,7 @@ Item {
   }
 
   function removeBinding() {
-    if (!selectedKey || !selectedBindings().length || saveProcess.running) return
+    if (!removeConfirm || !selectedKey || !selectedBindings().length || saveProcess.running) return
     var args = bindingArgs()
     args.push("--remove")
     args.push("--previous", selectedBindings()[0].description || "")
@@ -299,9 +319,11 @@ Item {
         root.selectedModifiers = []
         root.selectedKey = ""
         root.heldModifiers = KeyboardModel.emptyModifiers()
+        root.removeConfirm = false
         var prefix = "Saved "
         if (result.action === "replaced") prefix = "Updated "
         if (result.action === "removed") prefix = "Removed "
+        if (result.action === "restored") prefix = "Restored "
         root.saveNotice = prefix + result.shortcut
         root.reload()
         Qt.callLater(function() { keyCatcher.forceActiveFocus() })
@@ -370,7 +392,8 @@ Item {
         Keys.priority: Keys.BeforeItem
         Keys.onPressed: function(event) {
           if (event.key === Qt.Key_Escape) {
-            root.dismiss()
+            if (root.removeConfirm) root.removeConfirm = false
+            else root.dismiss()
             event.accepted = true
             return
           }
@@ -468,7 +491,13 @@ Item {
                     id: keyCap
                     required property var modelData
                     readonly property var keyBindings: modelData.gap ? [] : root.matchesFor(modelData.id)
-                    readonly property bool used: keyBindings.length > 0
+                    readonly property bool used: {
+                      for (var i = 0; i < keyBindings.length; i++) {
+                        if (keyBindings[i].origin !== "disabled") return true
+                      }
+                      return false
+                    }
+                    readonly property bool disabled: !used && KeyboardModel.disabledOnly(keyBindings)
                     readonly property bool activeModifier: modelData.modifier === true && root.modifierActive(modelData.id)
                     readonly property bool selected: modelData.modifier !== true && root.selectedKey === modelData.id
                     width: root.unit * modelData.width + root.keyGap * (modelData.width - 1)
@@ -476,8 +505,8 @@ Item {
                     radius: Math.max(5, root.cornerRadius * 0.7)
                     visible: !modelData.gap
                     color: activeModifier || selected || used ? root.selectedBackground : "transparent"
-                    border.color: used || activeModifier ? root.selectedBackground : root.border
-                    border.width: used || activeModifier ? 2 : 1
+                    border.color: used || disabled || activeModifier ? root.selectedBackground : root.border
+                    border.width: used || disabled || activeModifier ? 2 : 1
                     opacity: modelData.gap ? 0 : 1
 
                     Text {
@@ -541,9 +570,15 @@ Item {
               text: {
                 if (root.loadError) return "Check that Omarchy Shell and Hyprland are running, then refresh."
                 if (root.saveNotice) return "The shortcut is active and the keyboard has been refreshed."
-                if (!root.selectedKey) return "Select a key to inspect its shortcut. Highlighted keys are already in use."
+                if (root.saveError) return root.saveError
+                if (root.removeConfirm) return "Remove " + root.selectedShortcut() + "?"
+                if (!root.selectedKey) return "Select a key to inspect its shortcut. Filled keys are in use. A thick empty outline means an Omarchy default was unbound."
                 var matches = root.selectedBindings()
                 if (!matches.length) return "Available — no configured shortcut uses this combination."
+                if (root.selectedIsDisabled()) {
+                  var was = matches[0].description ? " — was " + matches[0].description : ""
+                  return "Disabled default" + was + ". Restore the original, or create a new shortcut."
+                }
                 var descriptions = []
                 for (var i = 0; i < matches.length; i++) {
                   var label = KeyboardModel.originLabel(matches[i].origin)
@@ -560,7 +595,7 @@ Item {
               spacing: Style.spacing.sm
               visible: root.selectedKey !== ""
               Rectangle {
-                visible: root.selectedBindings().length === 0
+                visible: (root.selectedBindings().length === 0 || root.selectedIsDisabled()) && !root.removeConfirm
                 width: Style.space(128)
                 height: Style.space(30)
                 radius: root.cornerRadius
@@ -583,7 +618,31 @@ Item {
                 }
               }
               Rectangle {
-                visible: root.selectedBindings().length > 0
+                visible: root.selectedIsDisabled() && !root.removeConfirm
+                width: Style.space(88)
+                height: Style.space(30)
+                radius: root.cornerRadius
+                color: restoreMouse.containsMouse ? root.selectedBackground : "transparent"
+                border.color: root.selectedBackground
+                border.width: 1
+                Text {
+                  anchors.centerIn: parent
+                  text: saveProcess.running ? "Restoring…" : "Restore"
+                  color: restoreMouse.containsMouse ? root.selectedText : root.foreground
+                  font.family: Style.font.menuFamily
+                  font.pixelSize: Style.font.body
+                }
+                MouseArea {
+                  id: restoreMouse
+                  anchors.fill: parent
+                  enabled: !saveProcess.running
+                  hoverEnabled: true
+                  cursorShape: Qt.PointingHandCursor
+                  onClicked: root.restoreBinding()
+                }
+              }
+              Rectangle {
+                visible: root.selectedBindings().length > 0 && !root.selectedIsDisabled() && !root.removeConfirm
                 width: Style.space(72)
                 height: Style.space(30)
                 radius: root.cornerRadius
@@ -606,16 +665,39 @@ Item {
                 }
               }
               Rectangle {
-                visible: root.selectedBindings().length > 0
+                visible: root.removeConfirm
                 width: Style.space(88)
                 height: Style.space(30)
                 radius: root.cornerRadius
-                color: removeMouse.containsMouse ? root.selectedBackground : "transparent"
+                color: cancelRemoveMouse.containsMouse ? root.selectedBackground : "transparent"
                 border.color: root.border
                 border.width: 1
                 Text {
                   anchors.centerIn: parent
-                  text: "Remove"
+                  text: "Cancel"
+                  color: cancelRemoveMouse.containsMouse ? root.selectedText : root.foreground
+                  font.family: Style.font.menuFamily
+                  font.pixelSize: Style.font.body
+                }
+                MouseArea {
+                  id: cancelRemoveMouse
+                  anchors.fill: parent
+                  hoverEnabled: true
+                  cursorShape: Qt.PointingHandCursor
+                  onClicked: root.removeConfirm = false
+                }
+              }
+              Rectangle {
+                visible: root.selectedBindings().length > 0 && !root.selectedIsDisabled()
+                width: root.removeConfirm ? Style.space(110) : Style.space(88)
+                height: Style.space(30)
+                radius: root.cornerRadius
+                color: removeMouse.containsMouse ? root.selectedBackground : "transparent"
+                border.color: root.removeConfirm ? root.selectedBackground : root.border
+                border.width: 1
+                Text {
+                  anchors.centerIn: parent
+                  text: saveProcess.running && root.removeConfirm ? "Removing…" : (root.removeConfirm ? "Confirm" : "Remove")
                   color: removeMouse.containsMouse ? root.selectedText : root.foreground
                   font.family: Style.font.menuFamily
                   font.pixelSize: Style.font.body
@@ -626,7 +708,10 @@ Item {
                   enabled: !saveProcess.running
                   hoverEnabled: true
                   cursorShape: Qt.PointingHandCursor
-                  onClicked: root.removeBinding()
+                  onClicked: {
+                    if (root.removeConfirm) root.removeBinding()
+                    else root.removeConfirm = true
+                  }
                 }
               }
             }

@@ -73,14 +73,28 @@ def parse_user_bindings(text: str) -> dict[str, dict[str, object]]:
     return found
 
 
-def parse_user_unbinds(text: str) -> set[str]:
-    found: set[str] = set()
+def _previous_from_comment(comment: str) -> str:
+    marker = "(was:"
+    if marker not in comment:
+        return ""
+    return comment.split(marker, 1)[1].strip().rstrip(")").strip()
+
+
+def parse_user_unbinds(text: str) -> dict[str, dict[str, object]]:
+    found: dict[str, dict[str, object]] = {}
     for match in UNBIND_RE.finditer(text):
         if _is_commented(text, match.start()):
             continue
         shortcut = normalize_shortcut(unescape_lua_string(match.group(1)))
-        if shortcut:
-            found.add(shortcut)
+        if not shortcut:
+            continue
+        comment = _last_comment(text[: match.start()])
+        found[shortcut] = {
+            "shortcut": shortcut,
+            "previous": _previous_from_comment(comment),
+            "plugin": comment.startswith("-- " + PLUGIN_DISABLE)
+            or comment.startswith("-- " + PLUGIN_OVERRIDE),
+        }
     return found
 
 
@@ -148,3 +162,17 @@ def write_disable(text: str, shortcut: str, previous: str, plugin_only: bool) ->
         + f"\n-- {PLUGIN_DISABLE} (was: {was})\n"
         + f"hl.unbind({lua_string(shortcut)})\n"
     )
+
+
+def write_restore(text: str, shortcut: str) -> str:
+    cleaned = remove_managed_blocks(text, shortcut)
+    escaped = re.escape(shortcut)
+    cleaned = re.sub(
+        rf"^[ \t]*hl\.unbind\(\s*\"{escaped}\"\s*\)[ \t]*\n?",
+        "",
+        cleaned,
+        flags=re.M,
+    )
+    if not cleaned.endswith("\n"):
+        cleaned += "\n"
+    return cleaned

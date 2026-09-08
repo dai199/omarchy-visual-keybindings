@@ -237,7 +237,16 @@ function originLabel(origin) {
   if (origin === "plugin") return "Added here"
   if (origin === "user") return "User override"
   if (origin === "omarchy") return "Omarchy default"
+  if (origin === "disabled") return "Disabled default"
   return ""
+}
+
+function disabledOnly(matches) {
+  if (!matches || !matches.length) return false
+  for (var i = 0; i < matches.length; i++) {
+    if (matches[i].origin !== "disabled") return false
+  }
+  return true
 }
 
 function hasUserOrigin(matches) {

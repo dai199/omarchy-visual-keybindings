@@ -114,6 +114,48 @@ class AddBindingTest(unittest.TestCase):
 
             self.assertEqual(config.read_text(encoding="utf-8"), original)
 
+    def test_restores_a_disabled_default(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            config = root / "bindings.lua"
+            config.write_text(
+                '-- Disabled by Visual Keybindings (was: Google Maps)\n'
+                'hl.unbind("SUPER + SHIFT + S")\n',
+                encoding="utf-8",
+            )
+            MODULE.restore_binding(config, "SUPER + SHIFT + S", reload_config=False)
+            text = config.read_text(encoding="utf-8")
+            self.assertNotIn("SUPER + SHIFT + S", text)
+            self.assertNotIn("hl.unbind", text)
+
+    def test_disabled_shortcuts_are_not_occupied(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            config = root / "bindings.lua"
+            config.write_text(
+                '-- Disabled by Visual Keybindings (was: Google Maps)\n'
+                'hl.unbind("SUPER + SHIFT + S")\n',
+                encoding="utf-8",
+            )
+            provider = root / "provider"
+            rows = [{"shortcut": "SUPER + SHIFT + S", "origin": "disabled"}]
+            provider.write_text(
+                "#!/bin/sh\nprintf '%s\\n' '" + json.dumps(rows) + "'\n",
+                encoding="utf-8",
+            )
+            provider.chmod(0o755)
+            MODULE.add_binding(
+                config,
+                provider,
+                "SUPER + SHIFT + S",
+                "Share",
+                "true",
+                reload_config=False,
+            )
+            text = config.read_text(encoding="utf-8")
+            self.assertIn('hl.unbind("SUPER + SHIFT + S")', text)
+            self.assertIn('o.bind("SUPER + SHIFT + S", "Share", "true")', text)
+
 
 if __name__ == "__main__":
     unittest.main()

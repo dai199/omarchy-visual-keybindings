@@ -64,7 +64,7 @@ class UserBindingsTest(unittest.TestCase):
         text = (ROOT / "tests" / "fixtures" / "user_bindings.lua").read_text()
         updated = USER.write_disable(text, "SHIFT + ALT + 4", "Screenshot", True)
         self.assertNotIn("SHIFT + ALT + 4", updated)
-        self.assertNotIn("hl.unbind", updated)
+        self.assertNotIn('hl.unbind("SHIFT + ALT + 4")', updated)
 
     def test_disable_omarchy_bind_appends_unbind(self):
         updated = USER.write_disable("-- cfg\n", "SUPER + 3", "Switch to workspace 3", False)
@@ -79,6 +79,19 @@ class UserBindingsTest(unittest.TestCase):
         self.assertEqual(by_shortcut["SUPER + RETURN"]["origin"], "omarchy")
         self.assertEqual(by_shortcut["SHIFT + ALT + 4"]["origin"], "plugin")
         self.assertEqual(by_shortcut["SHIFT + ALT + 4"]["command"], "omarchy-capture-screenshot")
+        self.assertEqual(by_shortcut["SUPER + SHIFT + S"]["origin"], "disabled")
+        self.assertEqual(by_shortcut["SUPER + SHIFT + S"]["description"], "Google Maps")
+        self.assertNotIn("SUPER + SHIFT + B", by_shortcut)
+
+    def test_skips_commented_unbinds_and_restores_disable_blocks(self):
+        text = (ROOT / "tests" / "fixtures" / "user_bindings.lua").read_text()
+        unbinds = USER.parse_user_unbinds(text)
+        self.assertIn("SUPER + SHIFT + S", unbinds)
+        self.assertEqual(unbinds["SUPER + SHIFT + S"]["previous"], "Google Maps")
+        self.assertNotIn("SUPER + SHIFT + B", unbinds)
+        restored = USER.write_restore(text, "SUPER + SHIFT + S")
+        self.assertNotIn("hl.unbind(\"SUPER + SHIFT + S\")", restored)
+        self.assertIn("SHIFT + ALT + 4", restored)
 
     def test_replace_and_remove_use_user_file(self):
         import json
