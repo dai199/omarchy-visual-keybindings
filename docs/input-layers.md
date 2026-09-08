@@ -46,20 +46,3 @@ Put that file at `~/.config/omarchy/extensions/dai199.visual-keybindings.json`.
 Set `autoDefine` to `false` if `hypr/submap.lua` (or your own submap of the
 same name) is already in `~/.config/hypr/bindings.lua`. The plugin then
 only dispatches into the submap you built.
-
-The same override file can replace the Create/Edit chips. A `presets`
-array replaces the shipped list from `presets.json`; omit it to keep the
-defaults.
-
-```json
-{
-  "presets": [
-    {
-      "id": "terminal",
-      "label": "Terminal",
-      "description": "Terminal",
-      "command": "omarchy-launch-terminal"
-    }
-  ]
-}
-```

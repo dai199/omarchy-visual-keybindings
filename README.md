@@ -17,7 +17,6 @@ in use and which keys are still available.
 - Used and available key states
 - Shortcut descriptions on selection
 - Shortcut creation, editing, and removal
-- Common action presets when creating or editing a shortcut
 - Omarchy defaults distinguished from user overrides
 - Automatic backup, validation, and rollback when saving
 - Automatic refresh whenever the overlay opens
@@ -93,11 +92,6 @@ reload automatically while developing.
 Keyboard capture is split into physical identity, compositor pause, and
 user policy. Defaults need no extra Hyprland config. To own the pause
 submap later, see `docs/input-layers.md`.
-
-Create and Edit offer chips for common Omarchy commands. Click one to
-fill Description and Command; both fields stay editable. Override the
-list with a `presets` array in
-`~/.config/omarchy/extensions/dai199.visual-keybindings.json`.
 
 ## Roadmap
 

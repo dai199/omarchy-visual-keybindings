@@ -180,44 +180,64 @@ function bindPreview(shortcut, description, command) {
   return "o.bind(" + luaString(shortcut) + ", " + luaString(description) + ", " + luaString(command) + ")"
 }
 
+function commandProgram(command) {
+  var text = String(command || "").trim()
+  if (!text) return ""
+  var parts = text.split(/\s+/)
+  for (var i = 0; i < parts.length; i++) {
+    var part = parts[i]
+    if (!part) continue
+    if (part.charAt(0) === "-") continue
+    if (part.indexOf("=") !== -1 && part.indexOf("/") === -1) continue
+    var bits = part.split("/")
+    return bits[bits.length - 1]
+  }
+  return ""
+}
+
+function titleCaseWords(text) {
+  var words = String(text || "").split(/\s+/)
+  var out = []
+  for (var i = 0; i < words.length; i++) {
+    var word = words[i]
+    if (!word) continue
+    out.push(word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+  }
+  return out.join(" ")
+}
+
+function descriptionFromCommand(command) {
+  var program = commandProgram(command)
+  if (!program) return ""
+  var exact = ({
+    "omarchy-launch-terminal": "Terminal",
+    "omarchy-launch-browser": "Browser",
+    "omarchy-launch-nautilus": "File manager",
+    "omarchy-launch-nautilus-cwd": "File manager (cwd)",
+    "omarchy-launch-editor": "Editor",
+    "omarchy-capture-screenshot": "Screenshot",
+    "omarchy-capture-screenrecording": "Screen recording",
+    "omarchy-system-lock": "Lock screen",
+    "omarchy-toggle-nightlight": "Toggle nightlight",
+    "omarchy-menu": "Omarchy menu"
+  })
+  if (exact[program]) return exact[program]
+  var prefixes = ["omarchy-launch-", "omarchy-capture-", "omarchy-system-", "omarchy-toggle-", "omarchy-menu-", "omarchy-"]
+  var name = program
+  for (var i = 0; i < prefixes.length; i++) {
+    if (name.indexOf(prefixes[i]) === 0) {
+      name = name.slice(prefixes[i].length)
+      break
+    }
+  }
+  return titleCaseWords(name.replace(/[-_]+/g, " "))
+}
+
 function originLabel(origin) {
   if (origin === "plugin") return "Added here"
   if (origin === "user") return "User override"
   if (origin === "omarchy") return "Omarchy default"
   return ""
-}
-
-function normalizePresets(value) {
-  var source = []
-  if (Array.isArray(value)) source = value
-  else if (value && Array.isArray(value.presets)) source = value.presets
-  var seen = {}
-  var out = []
-  for (var i = 0; i < source.length; i++) {
-    var row = source[i] || {}
-    var id = String(row.id || "").trim()
-    var label = String(row.label || row.description || "").trim()
-    var description = String(row.description || row.label || "").trim()
-    var command = String(row.command || "").trim()
-    if (!id || !label || !description || !command || seen[id]) continue
-    seen[id] = true
-    out.push({ id: id, label: label, description: description, command: command })
-  }
-  return out
-}
-
-function pickPresets(shipped, user) {
-  if (user && Array.isArray(user.presets)) return normalizePresets(user.presets)
-  return normalizePresets(shipped)
-}
-
-function matchingPreset(presets, command) {
-  var cmd = String(command || "").trim()
-  if (!cmd || !presets) return null
-  for (var i = 0; i < presets.length; i++) {
-    if (presets[i].command === cmd) return presets[i]
-  }
-  return null
 }
 
 function hasUserOrigin(matches) {
