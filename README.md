@@ -4,6 +4,8 @@ An interactive keyboard for exploring shortcuts configured in Omarchy and
 Hyprland. Select or hold modifier keys to see which combinations are already
 in use and which keys are still available.
 
+![Visual Keybindings with Super locked](docs/screenshot.png)
+
 > [!NOTE]
 > This is an early preview. Shortcut creation always shows a preview and
 > validates Hyprland after saving, but you should still review commands before
