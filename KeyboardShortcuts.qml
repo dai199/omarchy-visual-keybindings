@@ -39,10 +39,14 @@ Item {
   readonly property int cornerRadius: Style.cornerRadius
   readonly property int unit: Math.max(38, Math.min(58, Math.floor((panel.width - Style.space(100)) / 15.5)))
   readonly property int keyGap: Math.max(3, Style.space(4))
+  readonly property int headerHeight: Style.space(42)
+  readonly property int keyboardHeight: unit * 6 + keyGap * 5
+  readonly property int actionHeight: Style.space(30)
+  readonly property int detailHeight: 1 + Style.spacing.sm * 3 + Style.space(22) + Style.space(44) + actionHeight
   readonly property int cardWidth: Math.min(panel.width - Style.gapsOut * 2, unit * 15.5 + Style.space(56))
   readonly property int cardHeight: Math.min(
     panel.height - Style.gapsOut * 2,
-    unit * 6 + keyGap * 5 + Style.space(220)
+    headerHeight + keyboardHeight + detailHeight + Style.spacing.md * 2 + Style.spacing.panelPadding * 2
   )
 
   function pluginPath(name) {
@@ -116,6 +120,11 @@ Item {
     return KeyboardModel.disabledOnly(selectedBindings())
   }
 
+  function canCreateShortcut() {
+    if (!selectedKey || removeConfirm) return false
+    return selectedBindings().length === 0 || selectedIsDisabled()
+  }
+
   function selectedShortcut() {
     return selectedModifiers.concat([selectedKey]).join(" + ")
   }
@@ -170,8 +179,7 @@ Item {
     selectedModifiers = activeModifiers()
     selectedKey = keyData.id
     removeConfirm = false
-    if (selectedBindings().length === 0) beginEditor()
-    else keyCatcher.forceActiveFocus()
+    keyCatcher.forceActiveFocus()
   }
 
   function restoreBinding() {
@@ -409,6 +417,7 @@ Item {
       }
 
       Column {
+        id: cardBody
         anchors.fill: parent
         anchors.topMargin: card.contentTopInset
         anchors.rightMargin: card.contentRightInset
@@ -431,7 +440,7 @@ Item {
               font.bold: true
             }
             Text {
-              text: "Hold a physical modifier, or click one to lock and click again to unlock"
+              text: "Hold or click a modifier to lock it"
               color: root.foreground
               opacity: 0.58
               font.family: Style.font.menuFamily
@@ -474,7 +483,7 @@ Item {
 
         Item {
           width: parent.width
-          height: root.unit * 6 + root.keyGap * 5
+          height: root.keyboardHeight
 
           Column {
             anchors.horizontalCenter: parent.horizontalCenter
@@ -504,15 +513,20 @@ Item {
                     height: root.unit
                     radius: Math.max(5, root.cornerRadius * 0.7)
                     visible: !modelData.gap
-                    color: activeModifier || selected || used ? root.selectedBackground : "transparent"
-                    border.color: used || disabled || activeModifier ? root.selectedBackground : root.border
-                    border.width: used || disabled || activeModifier ? 2 : 1
+                    color: {
+                      if (activeModifier) return Util.alpha(root.selectedBackground, 0.2)
+                      if (selected || used) return root.selectedBackground
+                      if (keyHover.hovered) return Util.alpha(root.selectedBackground, 0.12)
+                      return "transparent"
+                    }
+                    border.color: used || disabled || activeModifier || selected ? root.selectedBackground : root.border
+                    border.width: used || disabled || activeModifier || selected ? 2 : 1
                     opacity: modelData.gap ? 0 : 1
 
                     Text {
                       anchors.centerIn: parent
                       text: parent.modelData.label
-                      color: parent.activeModifier || parent.selected || parent.used ? root.selectedText : root.foreground
+                      color: parent.selected || parent.used ? root.selectedText : root.foreground
                       font.family: Style.font.menuFamily
                       font.pixelSize: Style.font.body
                     }
@@ -523,6 +537,7 @@ Item {
                       onTapped: root.activateKey(keyCap.modelData)
                     }
                     HoverHandler {
+                      id: keyHover
                       enabled: !keyCap.modelData.gap
                       cursorShape: Qt.PointingHandCursor
                     }
@@ -533,87 +548,95 @@ Item {
           }
         }
 
-        Rectangle {
+        Column {
           width: parent.width
-          height: Style.space(148)
-          radius: root.cornerRadius
-          color: "transparent"
-          border.color: root.border
-          border.width: 1
+          height: root.detailHeight
+          spacing: Style.spacing.sm
 
-          Column {
-            anchors.fill: parent
-            anchors.margins: Style.spacing.md
+          Rectangle {
+            width: parent.width
+            height: 1
+            color: root.border
+            opacity: 0.7
+          }
+
+          Text {
+            width: parent.width
+            height: Style.space(22)
+            verticalAlignment: Text.AlignVCenter
+            color: root.loadError ? "#e06c75" : root.foreground
+            font.family: Style.font.menuFamily
+            font.pixelSize: Style.font.body
+            font.bold: true
+            elide: Text.ElideRight
+            text: {
+              if (root.loadError) return root.loadError
+              if (root.saveNotice) return root.saveNotice
+              if (!root.selectedKey) return root.activeModifiers().length ? root.activeModifiers().join(" + ") : "No modifiers"
+              return root.selectedShortcut()
+            }
+          }
+
+          Text {
+            width: parent.width
+            height: Style.space(44)
+            color: root.foreground
+            opacity: 0.7
+            font.family: Style.font.menuFamily
+            font.pixelSize: Style.font.body
+            wrapMode: Text.Wrap
+            maximumLineCount: 2
+            elide: Text.ElideRight
+            text: {
+              if (root.loadError) return "Check that Omarchy Shell and Hyprland are running, then use Clear."
+              if (root.saveNotice) return "The shortcut is active and the keyboard has been refreshed."
+              if (root.saveError) return root.saveError
+              if (root.removeConfirm) return "Remove " + root.selectedShortcut() + "?"
+              if (!root.selectedKey) return "Filled keys are in use. A thick empty outline is an unbound Omarchy default."
+              var matches = root.selectedBindings()
+              if (!matches.length) return "Available — no configured shortcut uses this combination."
+              if (root.selectedIsDisabled()) {
+                var was = matches[0].description ? " — was " + matches[0].description : ""
+                return "Disabled default" + was + "."
+              }
+              var descriptions = []
+              for (var i = 0; i < matches.length; i++) {
+                var label = KeyboardModel.originLabel(matches[i].origin)
+                var line = matches[i].description || "Configured shortcut"
+                if (label) line = label + " — " + line
+                if (matches[i].command) line += " · " + matches[i].command
+                descriptions.push(line)
+              }
+              return descriptions.join("  •  ")
+            }
+          }
+
+          Row {
             spacing: Style.spacing.sm
-
-            Text {
-              width: parent.width
-              color: root.loadError ? "#e06c75" : root.foreground
-              font.family: Style.font.menuFamily
-              font.pixelSize: Style.font.body
-              font.bold: true
-              text: {
-                if (root.loadError) return root.loadError
-                if (root.saveNotice) return root.saveNotice
-                if (!root.selectedKey) return root.activeModifiers().length ? root.activeModifiers().join(" + ") : "No modifiers"
-                return root.selectedShortcut()
-              }
-            }
-
-            Text {
-              width: parent.width
-              color: root.foreground
-              opacity: 0.7
-              font.family: Style.font.menuFamily
-              font.pixelSize: Style.font.body
-              wrapMode: Text.Wrap
-              text: {
-                if (root.loadError) return "Check that Omarchy Shell and Hyprland are running, then refresh."
-                if (root.saveNotice) return "The shortcut is active and the keyboard has been refreshed."
-                if (root.saveError) return root.saveError
-                if (root.removeConfirm) return "Remove " + root.selectedShortcut() + "?"
-                if (!root.selectedKey) return "Select a key to inspect its shortcut. Filled keys are in use. A thick empty outline means an Omarchy default was unbound."
-                var matches = root.selectedBindings()
-                if (!matches.length) return "Available — no configured shortcut uses this combination."
-                if (root.selectedIsDisabled()) {
-                  var was = matches[0].description ? " — was " + matches[0].description : ""
-                  return "Disabled default" + was + ". Restore the original, or create a new shortcut."
-                }
-                var descriptions = []
-                for (var i = 0; i < matches.length; i++) {
-                  var label = KeyboardModel.originLabel(matches[i].origin)
-                  var line = matches[i].description || "Configured shortcut"
-                  if (label) line = label + " — " + line
-                  if (matches[i].command) line += " · " + matches[i].command
-                  descriptions.push(line)
-                }
-                return descriptions.join("  •  ")
-              }
-            }
-
-            Row {
-              spacing: Style.spacing.sm
-              visible: root.selectedKey !== ""
+            width: parent.width
+            height: root.actionHeight
               Rectangle {
-                visible: (root.selectedBindings().length === 0 || root.selectedIsDisabled()) && !root.removeConfirm
+                visible: (!root.selectedKey || root.selectedBindings().length === 0 || root.selectedIsDisabled()) && !root.removeConfirm
                 width: Style.space(128)
                 height: Style.space(30)
                 radius: root.cornerRadius
-                color: createMouse.containsMouse ? root.selectedBackground : "transparent"
-                border.color: root.selectedBackground
+                opacity: root.canCreateShortcut() ? 1 : 0.4
+                color: root.canCreateShortcut() && createMouse.containsMouse ? root.selectedBackground : "transparent"
+                border.color: root.canCreateShortcut() ? root.selectedBackground : root.border
                 border.width: 1
                 Text {
                   anchors.centerIn: parent
                   text: "Create shortcut"
-                  color: createMouse.containsMouse ? root.selectedText : root.foreground
+                  color: root.canCreateShortcut() && createMouse.containsMouse ? root.selectedText : root.foreground
                   font.family: Style.font.menuFamily
                   font.pixelSize: Style.font.body
                 }
                 MouseArea {
                   id: createMouse
                   anchors.fill: parent
-                  hoverEnabled: true
-                  cursorShape: Qt.PointingHandCursor
+                  enabled: root.canCreateShortcut()
+                  hoverEnabled: root.canCreateShortcut()
+                  cursorShape: root.canCreateShortcut() ? Qt.PointingHandCursor : Qt.ArrowCursor
                   onClicked: root.beginEditor("create")
                 }
               }
@@ -717,7 +740,6 @@ Item {
             }
           }
         }
-      }
 
       Rectangle {
         id: editor
