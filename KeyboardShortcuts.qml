@@ -24,6 +24,10 @@ Item {
   property bool descriptionLocked: false
   property string generatedDescription: ""
   property bool removeConfirm: false
+  property bool rainbowForced: false
+  property bool rainbowBurst: false
+  readonly property bool rainbowPlay: rainbowForced || rainbowBurst
+  property real rainbowHue: 0
 
   property var pinnedModifiers: KeyboardModel.emptyModifiers()
   property var heldModifiers: KeyboardModel.emptyModifiers()
@@ -35,7 +39,8 @@ Item {
   property color scrim: Color.menu.scrim
   property color selectedBackground: Color.menu.selectedBackground
   property color selectedText: Color.menu.selectedText
-  property var borderSpec: Border.surfaceSpec("menu", "border", border, Math.max(1, Style.space(2)))
+  readonly property var menuBorderSpec: Border.surfaceSpec("menu", "border", border, Math.max(1, Style.space(2)))
+  property var borderSpec: rainbowPlay ? rainbowFrameSpec(rainbowHue) : menuBorderSpec
   readonly property int cornerRadius: Style.cornerRadius
   readonly property int unit: Math.max(38, Math.min(58, Math.floor((panel.width - Style.space(100)) / 15.5)))
   readonly property int keyGap: Math.max(3, Style.space(4))
@@ -118,6 +123,40 @@ Item {
 
   function selectedIsDisabled() {
     return KeyboardModel.disabledOnly(selectedBindings())
+  }
+
+  function toggleRainbow() {
+    if (rainbowPlay) {
+      rainbowForced = false
+      rainbowBurst = false
+      rainbowBurstTimer.stop()
+      return
+    }
+    rainbowForced = true
+  }
+
+  function startRainbowSurprise() {
+    rainbowForced = false
+    rainbowBurst = Math.random() < 0.1
+    if (rainbowBurst) rainbowBurstTimer.restart()
+    else rainbowBurstTimer.stop()
+  }
+
+  function rainbowColor(offset) {
+    var hue = ((rainbowHue + offset) % 360) / 360
+    if (hue < 0) hue += 1
+    return Qt.hsla(hue, 0.78, 0.58, 1)
+  }
+
+  function rainbowFrameSpec(hue) {
+    var colors = []
+    for (var i = 0; i < 6; i++) colors.push(rainbowColor(i * 60))
+    colors.push(colors[0])
+    return {
+      color: colors[0],
+      widths: menuBorderSpec.widths,
+      gradient: { colors: colors, angle: hue, enabled: true }
+    }
   }
 
   function canCreateShortcut() {
@@ -272,6 +311,7 @@ Item {
     editorOpen = false
     saveNotice = ""
     opened = true
+    startRainbowSurprise()
     setCompositorSubmap("pause")
     reload()
     Qt.callLater(function() { keyCatcher.forceActiveFocus() })
@@ -293,6 +333,24 @@ Item {
   function toggle() {
     if (opened) dismiss()
     else open("{}")
+  }
+
+  NumberAnimation {
+    id: rainbowSpin
+    target: root
+    property: "rainbowHue"
+    from: 0
+    to: 360
+    duration: 9000
+    loops: Animation.Infinite
+    running: root.opened && root.rainbowPlay
+  }
+
+  Timer {
+    id: rainbowBurstTimer
+    interval: 6000
+    repeat: false
+    onTriggered: root.rainbowBurst = false
   }
 
   Process {
@@ -438,9 +496,14 @@ Item {
               font.family: Style.font.menuFamily
               font.pixelSize: Style.font.heading
               font.bold: true
+              MouseArea {
+                anchors.fill: parent
+                cursorShape: Qt.PointingHandCursor
+                onClicked: root.toggleRainbow()
+              }
             }
             Text {
-              text: "Hold or click a modifier to lock it"
+              text: root.rainbowForced ? "Hold or click a modifier to lock it · rainbow on" : "Hold or click a modifier to lock it"
               color: root.foreground
               opacity: 0.58
               font.family: Style.font.menuFamily
