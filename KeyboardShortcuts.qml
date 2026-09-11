@@ -564,7 +564,7 @@ Item {
             width: parent.width
             height: Style.space(22)
             verticalAlignment: Text.AlignVCenter
-            color: root.loadError ? "#e06c75" : root.foreground
+            color: root.loadError ? Color.urgent : root.foreground
             font.family: Style.font.menuFamily
             font.pixelSize: Style.font.body
             font.bold: true
@@ -892,7 +892,7 @@ Item {
             width: parent.width
             visible: root.saveError !== ""
             text: root.saveError
-            color: "#e06c75"
+            color: Color.urgent
             wrapMode: Text.Wrap
             font.family: Style.font.menuFamily
             font.pixelSize: Style.font.body
