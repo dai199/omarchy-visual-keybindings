@@ -205,7 +205,7 @@ Item {
       fillDescriptionFromCommand()
   }
 
-  function activateKey(keyData) {
+  function activateKey(keyData, fromKeyboard) {
     if (keyData.modifier === true) {
       toggleModifier(keyData.id)
       keyCatcher.forceActiveFocus()
@@ -218,7 +218,8 @@ Item {
     selectedModifiers = activeModifiers()
     selectedKey = keyData.id
     removeConfirm = false
-    keyCatcher.forceActiveFocus()
+    if (fromKeyboard && selectedBindings().length === 0) beginEditor("create")
+    else keyCatcher.forceActiveFocus()
   }
 
   function restoreBinding() {
@@ -465,7 +466,7 @@ Item {
           }
           var keyId = root.keyIdFromEvent(event)
           if (!keyId) root.updatePhysicalModifier(event, true)
-          if (keyId && !event.isAutoRepeat) root.activateKey({ id: keyId, modifier: false })
+          if (keyId && !event.isAutoRepeat) root.activateKey({ id: keyId, modifier: false }, true)
           event.accepted = true
         }
         Keys.onReleased: function(event) {
