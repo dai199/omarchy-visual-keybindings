@@ -55,8 +55,8 @@ Item {
   )
 
   function pluginPath(name) {
-    var directory = manifest && manifest.__sourceDir ? String(manifest.__sourceDir) : ""
-    return directory.replace(/\/$/, "") + "/" + name
+    // Resolve beside this QML file: third-party manifests omit __sourceDir.
+    return decodeURIComponent(Qt.resolvedUrl(name).toString().replace(/^file:\/\//, ""))
   }
 
   function activeModifiers() {
